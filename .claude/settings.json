@@ -1,0 +1,42 @@
+{
+  "_merge_instructions": "This is the BASE hook config (safety only). To add stack-specific hooks: copy this file to .claude/settings.json, then MERGE entries from the stack overlay (e.g. hooks/typescript/settings.json). Add overlay PreToolUse entries into this PreToolUse array. Add PostToolUse as a new key. Do NOT create duplicate 'PreToolUse' keys — JSON silently drops duplicates.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "SAFE_TARGETS='node_modules|.next|dist|__pycache__|.cache|build|coverage|.turbo'; INPUT=$(cat); CMD=$(echo \"$INPUT\" | jq -r '.input.command // empty' 2>/dev/null); if echo \"$CMD\" | grep -qE 'rm\\s+-rf' && ! echo \"$CMD\" | grep -qE \"($SAFE_TARGETS)\"; then echo 'BLOCKED: rm -rf on non-build target. Override with user approval.' >&2; exit 2; fi; if echo \"$CMD\" | grep -qiE 'DROP\\s+TABLE|--force\\s+push|push\\s+--force|reset\\s+--hard'; then echo 'BLOCKED: destructive command detected.' >&2; exit 2; fi; exit 0",
+            "timeout": 5000
+          },
+          {
+            "type": "command",
+            "command": "INPUT=$(cat); CMD=$(echo \"$INPUT\" | jq -r '.input.command // empty' 2>/dev/null); if echo \"$CMD\" | grep -qE '^git\\s+commit'; then LARGE=$(find . -name '*.ts' -o -name '*.tsx' -o -name '*.py' | grep -v node_modules | grep -v __pycache__ | grep -v .venv | xargs wc -l 2>/dev/null | awk '$1 > 500 {print \"WARNING: \" $2 \" has \" $1 \" lines\"}'); if [ -n \"$LARGE\" ]; then echo \"$LARGE\"; echo 'Files over 500 lines detected. Decompose before committing.' >&2; exit 2; fi; fi; exit 0",
+            "timeout": 30000
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "INPUT=$(cat); CONTENT=$(echo \"$INPUT\" | jq -r '.input.content // .input.new_string // empty' 2>/dev/null); if echo \"$CONTENT\" | grep -qiE '(api_key|api_secret|password|secret_key|private_key|access_token)\\s*[:=]\\s*[\"'\\''][^\"'\\'']{8,}'; then echo 'BLOCKED: possible hardcoded secret detected.' >&2; exit 2; fi; exit 0",
+            "timeout": 5000
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "INPUT=$(cat); FILE=$(echo \"$INPUT\" | jq -r '.input.file_path // empty' 2>/dev/null); if echo \"$FILE\" | grep -qE '(\\.eslintrc|\\.ruff\\.toml|biome\\.json|pyproject\\.toml|tsconfig\\.json)$'; then echo 'BLOCKED: linter/compiler config edit. LLMs must fix code, not weaken rules.' >&2; exit 2; fi; exit 0",
+            "timeout": 5000
+          }
+        ]
+      }
+    ]
+  }
+}
