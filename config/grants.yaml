@@ -1,0 +1,66 @@
+# Per-tenant connector GRANTS → `tenant_connector`.
+#
+# There is deliberately NO credential in this file. A grant says *which tenant
+# may use which connector* and *where its credential lives* (`secret_ref`) —
+# never what the credential is. `scripts/seed.py` generates a fresh random token
+# per grant at seed time and writes only Fernet ciphertext, encrypted with the
+# owning tenant's own key, into `secrets.ciphertext`.
+#
+# WHY NOT A VAULT CONTAINER (ADR-026). Moving the value to Vault would relocate
+# the plaintext rather than remove it — something still has to put the token
+# into Vault, and Vault itself needs a bootstrap root token that would then live
+# in docker-compose.yml. A secrets system's root of trust has to come from
+# outside it; in a demo repo there is no outside. Not having a credential at all
+# is the only version of this with no literal anywhere.
+#
+# Re-running `make seed` ROTATES every generated token. That is intentional: it
+# costs nothing (no plaintext is cached anywhere) and it demonstrates that
+# resolution goes through `secret_ref` on every fetch rather than through a
+# value someone memorised.
+#
+# In production `secret_ref` is the same pointer, resolved against Vault KV or a
+# KMS-encrypted entry instead of the `secrets` table (ADR-006). The grant rows
+# below do not change.
+
+grants:
+  # --- tenant_acme: the demo tenant, both connectors ------------------------
+  - tenant_id: tenant_acme
+    connector_type: github
+    enabled: true
+    status: active
+    secret_ref: tenant_acme/github
+
+  - tenant_id: tenant_acme
+    connector_type: jira
+    enabled: true
+    status: active
+    secret_ref: tenant_acme/jira
+
+  # --- tenant_globex: the isolation tenant ----------------------------------
+  # Its credentials must resolve to values DIFFERENT from acme's — that is what
+  # `test_secret_indirection` asserts. Generation guarantees it without anyone
+  # having to author two distinct strings and keep them distinct.
+  - tenant_id: tenant_globex
+    connector_type: github
+    enabled: true
+    status: active
+    secret_ref: tenant_globex/github
+
+  - tenant_id: tenant_globex
+    connector_type: jira
+    enabled: true
+    status: active
+    secret_ref: tenant_globex/jira
+
+  # --- tenant_load: the k6 tenant -------------------------------------------
+  - tenant_id: tenant_load
+    connector_type: github
+    enabled: true
+    status: active
+    secret_ref: tenant_load/github
+
+  - tenant_id: tenant_load
+    connector_type: jira
+    enabled: true
+    status: active
+    secret_ref: tenant_load/jira

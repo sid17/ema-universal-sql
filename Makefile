@@ -34,17 +34,23 @@ up:
 down:
 	docker compose down
 
-## seed: load the demo tenants, connectors and policies. (Phase 1)
+## seed: load connectors, grants, secrets, policies and budgets from config/*.yaml.
+# Runs INSIDE the app container: postgres publishes no host port, so the
+# developer's machine cannot reach it directly. Re-runnable — every write is an
+# upsert, so reseeding after a demo is safe.
 seed:
-	@echo "seed: no-op — seeding lands in Phase 1 (control plane + connectors)."
+	docker compose exec -T app python -m scripts.seed
 
 ## test: the unit suite. No Docker required, so a fresh clone can run it first.
 test:
 	$(PY) -m pytest -q tests/unit
 
-## test-integration: route-level tests against the running stack. Needs `make up`.
+## test-integration: route-level and control-plane tests against the running
+# stack. Needs `make up` (and `make seed` for the seed tests). SEED_TEST_DATABASE_URL
+# points at the published 55432 mapping, not the in-compose 5432.
+SEED_TEST_DATABASE_URL ?= postgresql://postgres:postgres@localhost:55432/universal_sql
 test-integration:
-	$(PY) -m pytest -q tests/integration
+	SEED_TEST_DATABASE_URL="$(SEED_TEST_DATABASE_URL)" $(PY) -m pytest -q tests/integration
 
 ## e2e: Playwright browser specs. (Phase 3)
 e2e:

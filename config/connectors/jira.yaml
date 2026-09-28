@@ -1,0 +1,60 @@
+# Jira issues — connector definition. See github.yaml for the format.
+#
+# This is the more interesting of the two capability models, in two ways:
+#   1. every filter is OPTIONAL, unlike GitHub's required `repo`, so the two
+#      together prove the contract handles both requirements;
+#   2. `updated` supports RANGE operators while every other column is equality
+#      only — the asymmetry that makes `supports(column, op)` a two-argument
+#      question rather than a membership test.
+#
+# It is also the source carrying `assignee` (the RLS subject) and
+# `reporter_email` (the CLS-masked column), so Phase 2's entitlement work lands
+# against this connector. See config/policies.yaml.
+
+connector_type: jira
+version: "1.0.0"
+resource: issues
+
+capabilities:
+  columns:
+    - key
+    - status
+    - assignee
+    - reporter_email
+    - project
+    - updated
+
+  key_columns:
+    status:
+      require: optional
+      ops: ["="]
+      option: {inject_into: query, field: status}
+
+    # The RLS subject: Phase 2 compiles `assignee = :user` into the plan and
+    # pushes it down through this capability, so forbidden rows are never
+    # fetched rather than fetched-then-dropped.
+    assignee:
+      require: optional
+      ops: ["="]
+      option: {inject_into: query, field: assignee}
+
+    project:
+      require: optional
+      ops: ["="]
+      option: {inject_into: query, field: project}
+
+    updated:
+      require: optional
+      ops: ["=", ">", ">=", "<", "<="]
+      option: {inject_into: query, field: updated}
+
+  sortable:
+    - updated
+
+  # Offset pagination (startAt / total). Different strategy, same contract —
+  # the decoupling this phase exists to prove.
+  pagination:
+    strategy: offset
+    page_size: 100
+    token_option: {inject_into: query, field: startAt}
+    stop: returned<page_size

@@ -19,6 +19,11 @@ RUN mkdir -p src \
 
 COPY src/ ./src/
 COPY migrations/ ./migrations/
+# config/ and scripts/ are what `make seed` runs. They must be IN the image:
+# postgres and redis publish no host ports (see docker-compose.yml), so seeding
+# happens inside the container rather than from the developer's machine.
+COPY config/ ./config/
+COPY scripts/ ./scripts/
 
 ENV PYTHONPATH=/app
 

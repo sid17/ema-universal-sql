@@ -1,0 +1,46 @@
+# The minimal policy config the brief asks for (line 154): one RLS rule and one
+# column mask, shipped as YAML in the repo exactly as design-doc §6.2/§8.2
+# promises. Loaded into `policies` by scripts/seed.py.
+#
+# The RLS predicate is stored as a JSONB **AST**, never as a SQL string
+# (ADR-008). A policy that is a string of SQL can only be applied by
+# concatenating it into a query, which is both an injection surface and
+# impossible to analyse; an AST can be compiled into the plan, pushed down to a
+# source, and re-applied authoritatively by the engine.
+#
+# `:user` is a parameter, bound at query time from the caller's `sub` claim. It
+# is never interpolated as text.
+
+policies:
+  # --- RLS: a support user sees only the issues assigned to them -------------
+  # This is the rule the 3 -> 1 demo turns on. alice sees 3 rows, bob 1, carol 0.
+  - policy_id: rls-jira-assignee
+    tenant_id: tenant_acme
+    connector_type: jira
+    resource: issues
+    kind: RLS
+    applies_to: support          # matches a SCIM `roles` entry on the token
+    effect: allow
+    enabled: true
+    version: 1
+    predicate:
+      op: eq
+      col: assignee
+      value: ":user"
+
+  # --- CLS: the reporter's email is masked, never returned raw --------------
+  # `hash` rather than `drop` deliberately: the column still appears in the
+  # result with a stable value, so a caller can group by it without ever
+  # learning the address. Dropping it would change the result shape and make
+  # the mask invisible in the UI — the Phase 3 spec needs it visible.
+  - policy_id: cls-jira-reporter
+    tenant_id: tenant_acme
+    connector_type: jira
+    resource: issues
+    kind: CLS
+    applies_to: support
+    effect: allow
+    enabled: true
+    version: 1
+    column_name: reporter_email
+    mask: hash

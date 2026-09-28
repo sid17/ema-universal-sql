@@ -1,0 +1,57 @@
+# Per-tenant, per-connector token-bucket budgets → `rate_limit_policies`.
+#
+# ONE bucket per (tenant, connector) — matching this table's primary key, so
+# every capacity below comes from a real row rather than an invented per-user
+# limit (ADR-020). `capacity = max_requests + burst`: a cold bucket admits that
+# many back-to-back before throttling, then refills at
+# `window_sec / max_requests` per token.
+#
+# TWO PROFILES, because one cannot serve both demos:
+#   * tenant_acme's GitHub budget is deliberately TINY so `make demo` drains it
+#     in a short loop and the 429 + Retry-After + async-reroute hint is
+#     deterministic rather than a matter of timing.
+#   * tenant_load is the ONLY tenant k6 may target (HLD §9). A 5-request budget
+#     and a 500-QPS load test cannot coexist on one tenant — the load run would
+#     measure nothing but throttling.
+
+rate_limits:
+  # --- the demo tenant ------------------------------------------------------
+  - tenant_id: tenant_acme
+    connector_type: github
+    max_requests: 5           # capacity 7 with burst; drains in a 8-request loop
+    window_sec: 60
+    burst: 2
+
+  - tenant_id: tenant_acme
+    connector_type: jira
+    max_requests: 30          # roomier: Jira is not the connector the demo drains
+    window_sec: 60
+    burst: 5
+
+  # --- the k6 tenant: must NOT throttle (see Phase 4) -----------------------
+  - tenant_id: tenant_load
+    connector_type: github
+    max_requests: 5000
+    window_sec: 60
+    burst: 500
+
+  - tenant_id: tenant_load
+    connector_type: jira
+    max_requests: 5000
+    window_sec: 60
+    burst: 500
+
+  # --- the isolation tenant -------------------------------------------------
+  # Present so tenant_globex is a coherent tenant rather than a half-seeded one:
+  # the cache- and credential-isolation tests need it to be able to fetch.
+  - tenant_id: tenant_globex
+    connector_type: github
+    max_requests: 30
+    window_sec: 60
+    burst: 5
+
+  - tenant_id: tenant_globex
+    connector_type: jira
+    max_requests: 30
+    window_sec: 60
+    burst: 5
