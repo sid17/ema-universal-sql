@@ -13,12 +13,16 @@ import fakeredis.aioredis
 import pytest
 from cryptography.fernet import Fernet
 
+from src.connectors.base import CapabilityModel
 from src.connectors.github import GitHubConnectorAdapter
 from src.connectors.jira import JiraConnectorAdapter
 from src.governance.cache import FreshnessCacheManager
 from src.governance.clock import FakeClock
 from src.governance.ratelimit import TokenBucketRateLimiter
 from src.governance.secrets import SecretsManagerClient
+from src.models.context import UserContext
+from src.sqlparse.catalog import Source, SourceCatalog
+from src.sqlparse.parser import SQLParser
 
 
 @pytest.fixture
@@ -70,6 +74,7 @@ GITHUB_CAPABILITIES = {
             "option": {"inject_into": "query", "field": "author"},
         },
     },
+    "column_types": {"number": "integer"},
     "sortable": ["created_at", "updated_at"],
     "pagination": {
         "strategy": "cursor",
@@ -290,3 +295,93 @@ def second_github(second_redis, fake_clock, control_plane, secrets) -> GitHubCon
         control_plane=control_plane,
         now_ms=fake_clock,
     )
+
+
+# --- Phase 2: the parse/plan/execute fixtures -------------------------------
+#
+# The canonical query is a provenance rail (HLD §4 = design-doc §6.1). It is
+# pinned here verbatim so a drift in any Phase 2 test is a one-line diff in one
+# place rather than eight near-copies that slowly disagree.
+
+CANONICAL_SQL = """
+SELECT pr.title, pr.author, issue.key, issue.status
+FROM   github.pull_requests pr
+JOIN   jira.issues issue ON pr.issue_key = issue.key
+WHERE  pr.repo = 'ema/core' AND pr.state = 'open' AND issue.status = 'In Progress'
+ORDER BY issue.updated DESC
+LIMIT 50
+"""
+
+#: The canonical query projects four columns and none is `reporter_email`, so it
+#: cannot itself demonstrate CLS. This is the console's second preset (HLD §4).
+CLS_DEMO_SQL = """
+SELECT pr.title, pr.author, issue.key, issue.status, issue.reporter_email
+FROM   github.pull_requests pr
+JOIN   jira.issues issue ON pr.issue_key = issue.key
+WHERE  pr.repo = 'ema/core' AND pr.state = 'open' AND issue.status = 'In Progress'
+ORDER BY issue.updated DESC
+LIMIT 50
+"""
+
+#: Both connectors granted, which is what `tenant_acme` is seeded with.
+GRANTED = frozenset({"github", "jira"})
+
+
+def build_catalog() -> SourceCatalog:
+    """The two sources, built from the same capability dicts the adapters use."""
+    return SourceCatalog(
+        {
+            ("github", "pull_requests"): Source(
+                connector_type="github",
+                resource="pull_requests",
+                capabilities=CapabilityModel.from_dict(GITHUB_CAPABILITIES),
+            ),
+            ("jira", "issues"): Source(
+                connector_type="jira",
+                resource="issues",
+                capabilities=CapabilityModel.from_dict(JIRA_CAPABILITIES),
+            ),
+        }
+    )
+
+
+@pytest.fixture
+def catalog() -> SourceCatalog:
+    return build_catalog()
+
+
+@pytest.fixture
+def parser(catalog) -> SQLParser:
+    return SQLParser(catalog)
+
+
+@pytest.fixture
+def alice() -> UserContext:
+    """The headline persona: three entitled rows, `support` role."""
+    return UserContext(
+        tenant_id="tenant_acme",
+        user_id="alice",
+        roles=("support",),
+        scopes=frozenset({"query:execute"}),
+    )
+
+
+def persona(user_id: str, *roles: str) -> UserContext:
+    """Any persona on `tenant_acme`, for the tests that need bob/carol/auditor."""
+    return UserContext(
+        tenant_id="tenant_acme",
+        user_id=user_id,
+        roles=roles or ("support",),
+        scopes=frozenset({"query:execute"}),
+    )
+
+
+@pytest.fixture
+def adapters(github, jira) -> dict:
+    """Both mock adapters, sharing one Redis so budgets and caches interact.
+
+    Sharing is the realistic wiring — one process, one Redis — and it is what
+    lets a test assert that a cache hit on one source did not spend the other's
+    token.
+    """
+    return {"github": github, "jira": jira}
