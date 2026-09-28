@@ -70,9 +70,10 @@ they slip.
 
 - **UI console + Playwright specs.** The brief says *keep UI minimal* (62), so the console is a demo
   vehicle, not a requirement. It is still the fastest way for a reviewer to *see* four of the five hard
-  parts, and the screenshot artifact comes free. **Ordering consequence:** Phase 3 builds this and is SHOULD-tier,
-  while Phase 4 holds four MUST-tier items and depends only on Phase 2 — so under time pressure run **Phase 4
-  before Phase 3** (see the scope ledger in `01-EXECUTION-PLAN.md`).
+  parts, and the screenshot artifact comes free. **Committed as of 2026-09-28** — this is being built, not
+  held in reserve. **Ordering consequence:** Phase 3 builds it and is SHOULD-tier, while Phase 4 holds four
+  MUST-tier items and depends only on Phase 2 — so **Phase 4 runs before Phase 3 regardless**, not only under
+  time pressure (see the scope ledger in `01-EXECUTION-PLAN.md`).
 - **Cross-tenant cache isolation test.** Cheap, and it is the sharpest security point available
   (Security is 15%).
 - **Result-level cursor pagination** over the joined rows, on top of the MUST-level `LIMIT`.
@@ -94,6 +95,14 @@ is an acceptable answer for every item here.
 - Residency seeding / `deployment_mode` column exercise
 
 ### Cut order
+
+> **Scope decided 2026-09-28 (after Phase 0 shipped): all five phases — 0 → 1 → 2 → 4 → 3.** The SHOULD-tier
+> console and Playwright specs are committed, not conditional. The COULD list below stays **opportunistic**:
+> those are individual deliverables rather than a phase, and prose remains an acceptable answer for each.
+>
+> Committing to full scope does **not** retire this cut order — it makes it more important, because the
+> estimate it protects (≈18–24h against the brief's ~6–10h framing) is the one most likely to slip. The tiers
+> are what turn an overrun into a decision already made rather than a panic.
 
 If time runs short, cut from the bottom of COULD upward, and **never** cut into SHOULD before COULD is
 empty. Every cut item must get its README paragraph mapping it to where the full design covers it

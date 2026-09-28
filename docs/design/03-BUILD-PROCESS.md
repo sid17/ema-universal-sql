@@ -235,7 +235,28 @@ order, not numeric order. Phase file names keep their original numbers.
 ## Effort reality check
 
 The phase specs inherit the brief's ~6–10h framing. Against what is now specified, the honest estimate is
-**≈18–24h**, or **≈15–20h** for the MUST-only path (0 → 1 → 2 → 4). Two levers if that needs to come down:
-drop Phase 3 entirely (−3–4h; `make demo` already carries the demo), and drop the whole COULD list (−2–3h).
-That lands near 12–14h. Decide which lever *before* starting, not at hour 10 — that is what the tiers and the
-cut order in `02-DEFINITION-OF-DONE.md` §3 exist for.
+**≈18–24h**, or **≈15–20h** for the MUST-only path (0 → 1 → 2 → 4). Two levers were available if that needed
+to come down: drop Phase 3 entirely (−3–4h; `make demo` already carries the demo), and drop the whole COULD
+list (−2–3h), landing near 12–14h.
+
+### DECIDED (2026-09-28, after Phase 0 shipped): build all five phases
+
+**Neither lever is being pulled.** The scope is the full tracker — **0 → 1 → 2 → 4 → 3** — including the
+SHOULD-tier UI console and Playwright specs. Budget accepted at ≈18–24h against the brief's ~6–10h framing;
+the decision was taken with Phase 0's real cost already known rather than as an up-front guess.
+
+What this does and does not change:
+
+- **Build order is unchanged.** Still 0 → 1 → 2 → 4 → 3. Phase 4 keeps its place ahead of Phase 3 because it
+  holds four MUST-tier deliverables (k6, the Prometheus metric, the trace, the README) and both depend only on
+  Phase 2. Committing to Phase 3 is not a reason to build it earlier.
+- **The COULD list stays opportunistic.** "All phases" means all five *phases*; the COULD items in
+  `02-DEFINITION-OF-DONE.md` §3 are individual deliverables, not a phase, and prose remains an acceptable
+  answer for every one of them. Build them only once every MUST and SHOULD is green.
+- **The cut order still stands** and is not dead weight. It is insurance, not a plan: if the hour boxes slip,
+  cut from the bottom of COULD upward and **never** into SHOULD before COULD is empty.
+- **Nothing about the tiers changes.** A MUST is still a MUST. The tiers are what protect the submission when
+  estimates slip, and the estimate above is the one most likely to.
+
+Revisit only if a phase gate slips badly enough that a MUST-tier deliverable is at risk — at which point
+Phase 3 is the first thing to go, because `make demo` already carries the demo.

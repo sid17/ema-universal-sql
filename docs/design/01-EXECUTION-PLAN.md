@@ -47,10 +47,13 @@ Read this to answer *"where am I and what's remaining?"* without re-reading five
 | **4** | OTel spans · `/metrics` · k6 load · README completion · artifacts | **MUST** (k6, metric, trace, README) | trace waterfall readable; k6 summary; fresh clone `make up` < 60s | submission |
 
 **Phases 3 and 4 are independent of each other** — both need only Phase 2. That matters, because as numbered the
-plan does the SHOULD-tier phase *before* the phase holding four MUST-tier deliverables. If time gets tight,
-**do Phase 4 before Phase 3.** The console is the nicest way to show the work; the trace screenshot, the k6 run,
-the Prometheus metric and the README are the ones the brief actually requires (lines 160–161, 166–167).
-`make demo` from Phase 2 already covers the "show me it working" need without any UI.
+plan does the SHOULD-tier phase *before* the phase holding four MUST-tier deliverables. **Do Phase 4 before
+Phase 3** — this is the committed order, not just a time-pressure fallback. Phase 3 being in scope is not a
+reason to pull it earlier; if anything slips, the phase that slips should be the SHOULD-tier one.
+
+The console is the nicest way to show the work — but the trace screenshot, the k6 run, the Prometheus metric
+and the README are the ones the brief actually requires (lines 160–161, 166–167), and `make demo` from Phase 2
+already covers the "show me it working" need without any UI.
 
 ### If you only have N hours
 
@@ -59,10 +62,15 @@ the Prometheus metric and the README are the ones the brief actually requires (l
 | ~4h | P0 + P1 | plumbing proven, nothing demoable — **not submittable** |
 | ~7h | P0 + P1 + P2 | `make demo` proves all five hard parts via curl; tests green. **Minimally submittable** |
 | ~9h | + P4 | every MUST met: k6, metric, trace, README, screenshot. **Properly submittable** |
-| ~12h | + P3 | console + Playwright. The version that demos well |
-| more | COULD list | ETag/304, nested buckets, circuit breaker, crypto-shred (DoD §3) |
+| **~12h** | **+ P3** | **console + Playwright. ← THE COMMITTED SCOPE (decided 2026-09-28)** |
+| more | COULD list | ETag/304, nested buckets, circuit breaker, crypto-shred (DoD §3) — opportunistic |
 
-Cut from the bottom. Never cut a MUST to reach a SHOULD.
+**Decided after Phase 0 shipped: all five phases.** The target is the fourth row — every MUST plus the
+SHOULD-tier console and Playwright specs. The COULD list stays opportunistic; those are individual
+deliverables, not a phase, and prose is an acceptable answer for each (DoD §3).
+
+This table remains the contingency ladder, not a menu to re-pick from. Cut from the bottom, and never cut a
+MUST to reach a SHOULD. See `03-BUILD-PROCESS.md` → *Effort reality check* for the reasoning.
 
 ---
 

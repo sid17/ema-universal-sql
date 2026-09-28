@@ -93,17 +93,25 @@ longer appear flat in `app.routes` (introspection misleads — use a TestClient)
   (**hard gate: human reviews the plan**) → `/build-phase`.
 - Plan file: none yet for Phase 1. Last completed: **Phase 0, all 20 tasks**.
 
-**Two open questions for the user, both carried from Session 1:**
+**Scope: DECIDED — build all five phases.** Confirmed 2026-09-28 after Phase 0 shipped, with its real cost
+known rather than as an up-front guess. Neither effort lever is pulled: the SHOULD-tier console and Playwright
+specs are in. Build order is unchanged (**0 → 1 → 2 → 4 → 3**) — Phase 3 being committed is not a reason to
+pull it ahead of Phase 4, which holds four MUST-tier deliverables. The COULD list stays opportunistic; prose is
+an acceptable answer for each of those items. Recorded in `03-BUILD-PROCESS.md` (*Effort reality check*),
+`01-EXECUTION-PLAN.md` (scope ledger) and `02-DEFINITION-OF-DONE.md` §3.
 
-1. **Effort lever still undecided.** Deferred with *"don't rely on the time mentioned, let's build Phase 0
-   first and I'll take it from there."* Now that Phase 0's real cost is known, worth revisiting: MUST-only
-   (0→1→2→4) versus adding Phase 3 and/or the COULD list.
-2. **The submitted Google Doc is still missing design-doc §6 and §8** — including §6.4, where the access grant
+**One open question for the user, carried from Session 1:**
+
+1. **The submitted Google Doc is still missing design-doc §6 and §8** — including §6.4, where the access grant
    to `souvik-sen@` / `careers@` is stated (submission checklist lines 50/165). Both sections exist in
    `docs/design/design-doc.md`. This is a paste, and it is still the highest-value fix available.
 
 ## Key Decisions
 
+- **Scope: all five phases** (0 → 1 → 2 → 4 → 3), decided 2026-09-28 with Phase 0's real cost known. Phase 3
+  is committed rather than conditional; the COULD list stays opportunistic. The cut order in
+  `02-DEFINITION-OF-DONE.md` §3 is not retired — it is insurance on an estimate (≈18–24h) that is the most
+  likely thing to slip.
 - **Four new ADRs**, all Accepted, in `docs/kickoff/v1/architecture.md`:
   **015** `/metrics` is one route we own (collectors via `.instrument(app)`, never `.expose(app)`) ·
   **016** no OTLP exporter or Jaeger container — compose stays three services against the 60s cold-start gate ·
