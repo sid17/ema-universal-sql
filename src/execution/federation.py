@@ -36,18 +36,28 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-import duckdb
-from sqlglot import exp
-
 from src.connectors.base import AdapterResponse, BaseConnectorAdapter, FetchRequest
-from src.execution.arrow import build_table, envelope_type
+from src.execution.join import join_sources
 from src.models.errors import ApiError, ErrorCode
+from src.observability.metrics import observe_connector_fetch
+from src.observability.tracing import ELAPSED_MS_ATTRIBUTE, get_tracer
 from src.planner.planner import QueryPlan, SourcePlan
 
 logger = logging.getLogger(__name__)
 
 #: How a source's fetch ended. Mirrors ``SourceOutcome.state`` in the envelope.
 SourceState = Literal["ok", "timeout", "error", "throttled"]
+
+#: One span per source, named for the connector (ADR-037). Opened **inside** the
+#: ``asyncio.gather`` closure so OTel context parents it to ``federation`` and
+#: the two siblings carry genuinely overlapping start/end times — that overlap
+#: is the trace's evidence that the federation is parallel, and a span
+#: synthesized afterwards from ``connector_ms`` could not show it.
+CONNECTOR_SPAN_PREFIX = "connector."
+
+#: Span attribute carrying how the fetch ended, so a reader of the trace alone
+#: can tell a fast success from a fast failure.
+SOURCE_STATE_ATTRIBUTE = "source.state"
 
 #: The only failure a query may survive as a partial result.
 #:
@@ -152,7 +162,7 @@ class FederationEngine:
         """
         fetches = await self._fetch_all(plan, tenant_id, max_staleness_ms, source_limit)
         self._raise_on_hard_failure(fetches)
-        rows, columns = self._join(plan, fetches, row_limit)
+        rows, columns = join_sources(plan, fetches, row_limit)
         return FederationResult(rows=rows, columns=columns, fetches=fetches)
 
     # -- the parallel fetch, with a real deadline --------------------------
@@ -196,21 +206,31 @@ class FederationEngine:
                 max_staleness_ms=max_staleness_ms,
             )
             adapter = self._adapter_for(source_plan)
-            started = time.perf_counter()
-            try:
-                response = await asyncio.wait_for(adapter.fetch(request), timeout=budget_s)
-            except TimeoutError:
-                return self._timed_out(alias, source_plan, started, budget_s)
-            except ApiError as exc:
-                return self._failed(alias, source_plan, started, exc)
-            return SourceFetch(
-                alias=alias,
-                connector_type=source_plan.connector_type,
-                plan=source_plan,
-                elapsed_ms=(time.perf_counter() - started) * 1000.0,
-                state="ok",
-                response=response,
-            )
+            span_name = f"{CONNECTOR_SPAN_PREFIX}{source_plan.connector_type}"
+            with get_tracer().start_as_current_span(span_name) as span:
+                started = time.perf_counter()
+                try:
+                    response = await asyncio.wait_for(adapter.fetch(request), timeout=budget_s)
+                except TimeoutError:
+                    fetch = self._timed_out(alias, source_plan, started, budget_s)
+                except ApiError as exc:
+                    fetch = self._failed(alias, source_plan, started, exc)
+                else:
+                    fetch = SourceFetch(
+                        alias=alias,
+                        connector_type=source_plan.connector_type,
+                        plan=source_plan,
+                        elapsed_ms=(time.perf_counter() - started) * 1000.0,
+                        state="ok",
+                        response=response,
+                    )
+                # The SAME `elapsed_ms` the envelope reports and the histogram
+                # records — one `perf_counter` pair, three views (ADR-037). A
+                # second timer here would be a number that could disagree with
+                # the response, which is the one thing a trace must never do.
+                span.set_attribute(ELAPSED_MS_ATTRIBUTE, fetch.elapsed_ms)
+                span.set_attribute(SOURCE_STATE_ATTRIBUTE, fetch.state)
+                return fetch
 
         # return_exceptions=True: see the module docstring. A sibling failure
         # must never cancel a fetch that is about to succeed.
@@ -245,6 +265,16 @@ class FederationEngine:
                     ),
                 )
             )
+
+        # Observed here rather than beside each `return`, so all four outcomes —
+        # ok, timeout, ApiError and an unexpected exception — are counted by one
+        # line that cannot be forgotten when a fifth is added. Sources that were
+        # never called are skipped: a 0ms sample for a fetch that did not happen
+        # would drag the histogram down and make a default-denied query look
+        # like a fast one.
+        for fetch in fetches:
+            if not fetch.plan.yields_nothing:
+                observe_connector_fetch(fetch.connector_type, fetch.elapsed_ms / 1000.0)
         return tuple(fetches)
 
     def _adapter_for(self, source_plan: SourcePlan) -> BaseConnectorAdapter:
@@ -312,66 +342,3 @@ class FederationEngine:
                 raise fetch.error
 
     # -- the join ----------------------------------------------------------
-
-    def _join(
-        self,
-        plan: QueryPlan,
-        fetches: tuple[SourceFetch, ...],
-        row_limit: int | None = None,
-    ) -> tuple[list[list[Any]], tuple[tuple[str, str], ...]]:
-        """Register every source as an Arrow table and run the entitled SQL.
-
-        The SQL executed is the **whole entitled tree** — every predicate,
-        including the ones a source already applied. Re-applying them is free and
-        is what makes pushdown an optimization rather than a correctness
-        dependency (non-negotiable #2).
-        """
-        connection = duckdb.connect(":memory:")
-        try:
-            for fetch in fetches:
-                source = fetch.plan.source
-                connection.register(
-                    source.registered_name,
-                    build_table(
-                        fetch.rows,
-                        fetch.plan.columns_to_fetch,
-                        {
-                            column: source.capabilities.type_of(column)
-                            for column in fetch.plan.columns_to_fetch
-                        },
-                    ),
-                )
-            tree = rebind_to_registered(plan.ast)
-            if row_limit is not None:
-                tree.set("limit", exp.Limit(expression=exp.Literal.number(row_limit)))
-            sql = tree.sql(dialect="duckdb")
-            cursor = connection.execute(sql)
-            columns = tuple(
-                (name, envelope_type(kind)) for name, kind, *_ in cursor.description or ()
-            )
-            # `to_arrow_table()`, not `.arrow()`: on duckdb 1.5.x the latter
-            # returns a RecordBatchReader and `fetch_arrow_table()` is deprecated.
-            table = cursor.to_arrow_table()
-            rows = [[record[name] for name, _ in columns] for record in table.to_pylist()]
-            return rows, columns
-        finally:
-            connection.close()
-
-
-def rebind_to_registered(tree: exp.Select) -> exp.Select:
-    """``github.pull_requests AS pr`` -> ``github_pull_requests AS pr``.
-
-    DuckDB has no ``github`` schema, so the two-part name has to collapse — but
-    the **alias must survive**, or every qualified column in the query stops
-    resolving. Works on a copy: the caller's tree is what the audit log and the
-    trace describe, and rewriting it in place would make both describe DuckDB's
-    private naming instead of the query that was asked.
-    """
-    tree = tree.copy()
-    for table in tree.find_all(exp.Table):
-        db = table.text("db")
-        if not db:
-            continue
-        table.set("db", None)
-        table.set("this", exp.to_identifier(f"{db}_{table.name}"))
-    return tree

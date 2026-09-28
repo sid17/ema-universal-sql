@@ -13,7 +13,8 @@ from sqlglot import exp
 from src.connectors.errors import FailureMode
 from src.entitlement.engine import EntitlementEngine
 from src.execution.arrow import build_table
-from src.execution.federation import FederationEngine, rebind_to_registered
+from src.execution.federation import FederationEngine
+from src.execution.join import rebind_to_registered
 from src.models.errors import ApiError, ErrorCode
 from src.planner.planner import QueryPlanner
 from src.sqlparse.parser import flatten_conjunction
