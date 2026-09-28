@@ -35,6 +35,17 @@ services:
       # silently keeps exporting and distorts the very latency k6 measures.
       OTEL_EXPORTER: ${OTEL_EXPORTER:-file}
       OTEL_TRACE_FILE: ${OTEL_TRACE_FILE:-traces/spans.jsonl}
+      # 8 workers by default (measured ~4x one worker). `prometheus_client`'s
+      # registry is per process, so PROMETHEUS_MULTIPROC_DIR is what keeps
+      # /metrics reporting the whole app rather than whichever worker answered.
+      WORKERS: ${WORKERS:-8}
+      PROMETHEUS_MULTIPROC_DIR: ${PROMETHEUS_MULTIPROC_DIR:-/tmp/prometheus}
+      # Synthetic per-tenant datasets for the load tenants. 0 = OFF, which is
+      # the default everywhere else: the demo, the tests and `make trace` all
+      # read the committed 20-row fixtures. See src/connectors/synthetic.py.
+      SYNTHETIC_ROWS: ${SYNTHETIC_ROWS:-0}
+      SYNTHETIC_KEYSPACE: ${SYNTHETIC_KEYSPACE:-20}
+      DUCKDB_MAX_INSTANCES: ${DUCKDB_MAX_INSTANCES:-32}
     # ADR-016 keeps tracing backend-free, so the JSONL span log *is* the
     # artifact. Bind-mounted rather than left in the container so Phase 4 can
     # render the waterfall from the host after `make down`.
@@ -74,13 +85,19 @@ services:
       BASE_URL: http://app:8000
       RATE: ${RATE:-500}
       DURATION: ${DURATION:-60s}
+      LOAD_TENANTS: ${LOAD_TENANTS:-20}
+      SYNTHETIC_KEYSPACE: ${SYNTHETIC_KEYSPACE:-20}
+      MISS_RATE: ${MISS_RATE:-0.05}
+      WARMUP: ${WARMUP:-20s}
     volumes:
       - ./load:/load:ro
-      # handleSummary writes docs/k6-summary.txt through this mount, rather than
-      # the run's stdout being redirected: stdout carries the live progress bar
-      # and ANSI escapes, which do not belong in a submission artifact.
-      - ./docs:/artifacts
-    entrypoint: ["k6", "run", "/load/query_load.js"]
+      # handleSummary writes through this mount rather than the run's stdout
+      # being redirected: stdout carries the live progress bar and ANSI escapes,
+      # which do not belong in a submission artifact.
+      - ./docs/artifacts/load:/artifacts
+    # SCRIPT selects the profile: query_load.js is Phase 4's single-tenant
+    # throughput run, multitenant.js is Phase 5's realistic S3 scenario.
+    entrypoint: ["sh", "-c", "k6 run /load/${SCRIPT:-multitenant.js}"]
     depends_on:
       app:
         condition: service_healthy

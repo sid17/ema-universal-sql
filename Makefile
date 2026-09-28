@@ -10,7 +10,7 @@ BASE_URL ?= http://localhost:8000
 HEALTH_URL ?= $(BASE_URL)/healthz
 HEALTH_TIMEOUT ?= 90
 
-.PHONY: up down seed test test-integration test-mode e2e load demo trace scrape artifacts fmt
+.PHONY: up down seed test test-integration test-mode e2e load load-seed load-mt demo trace scrape artifacts fmt
 
 ## up: build and start the stack, then wait until /healthz actually answers.
 # Polled, not slept: the submission gate times cold-to-serving, so the wait has
@@ -77,7 +77,7 @@ trace:
 e2e:
 	@echo "e2e: no-op — Playwright UI specs land in Phase 3."
 
-## load: k6 at ~500 RPS for 60s, writing docs/k6-summary.txt.
+## load: k6 at ~500 RPS for 60s, writing docs/artifacts/load/k6-summary.txt.
 # Runs k6 from its own container (the `load` compose profile), so a fresh clone
 # needs only Docker — no host k6 binary. The sub-60s quickstart claim depends on
 # a reviewer never having to install anything.
@@ -98,22 +98,72 @@ load:
 	-RATE=$(RATE) DURATION=$(DURATION) docker compose --profile load run --rm k6
 	@echo "restoring the file span exporter..."
 	docker compose up -d --wait app
-	@echo "wrote docs/k6-summary.txt"
+	@echo "wrote docs/artifacts/load/k6-summary.txt"
+
+## load-seed: create the synthetic load tenants (tenant_load_00 ... _NN).
+# Separate from `make seed`, which is config-driven and describes the DEMO.
+# Twenty identical tenants are not configuration anyone would author by hand.
+LOAD_TENANTS ?= 20
+# 5000/60s by default so S1-S3 measure the ENGINE. Set LOAD_MAX_REQUESTS=84 to
+# seed GitHub's real 5,000/hour quota — that is what makes S4 throttle.
+LOAD_MAX_REQUESTS ?= 5000
+load-seed:
+	docker compose exec -T -e LOAD_TENANTS=$(LOAD_TENANTS) -e LOAD_MAX_REQUESTS=$(LOAD_MAX_REQUESTS) app python -m scripts.seed_load_tenants
+
+## load-mt: S3 — the realistic multi-tenant scenario at $(RATE) QPS for $(DURATION).
+#
+# EVERY setting is passed on BOTH commands, and that is not redundancy.
+# `--build` is not optional either: `scripts/` and `src/` are COPYed into the
+# image, not bind-mounted, so without it a load run measures whatever code was
+# baked in last time. That silently ignored a rate-limit change once.
+#
+# `docker compose run` honours `depends_on:`, so starting k6 RECREATES `app`
+# from the base compose file — silently discarding anything set only on the
+# `up` line. That produced a completely wrong measurement once already
+# (SYNTHETIC_ROWS=0, so every query joined an empty dataset and still passed
+# its checks). The assertion below is the guard: it reads the value back out
+# of the running container and refuses to measure a stack it did not configure.
+SYNTHETIC_ROWS ?= 200
+SYNTHETIC_KEYSPACE ?= 20
+MISS_RATE ?= 0.05
+WARMUP ?= 20s
+LOAD_ENV = OTEL_EXPORTER=none \
+	   SYNTHETIC_ROWS=$(SYNTHETIC_ROWS) \
+	   SYNTHETIC_KEYSPACE=$(SYNTHETIC_KEYSPACE) \
+	   LOAD_TENANTS=$(LOAD_TENANTS) \
+	   MISS_RATE=$(MISS_RATE) \
+	   WARMUP=$(WARMUP) \
+	   RATE=$(RATE) \
+	   DURATION=$(DURATION) \
+	   LOAD_MAX_REQUESTS=$(LOAD_MAX_REQUESTS)
+
+load-mt:
+	@echo "recreating app: OTEL_EXPORTER=none, SYNTHETIC_ROWS=$(SYNTHETIC_ROWS), WORKERS=$${WORKERS:-8}"
+	$(LOAD_ENV) docker compose up -d --wait --build app
+	@got=$$(docker compose exec -T app printenv SYNTHETIC_ROWS); 	 if [ "$$got" != "$(SYNTHETIC_ROWS)" ]; then 	   echo "ABORT: app reports SYNTHETIC_ROWS=$$got, expected $(SYNTHETIC_ROWS)"; exit 1; 	 fi; 	 echo "  verified: app has SYNTHETIC_ROWS=$$got, $$(docker compose exec -T app sh -c 'tr "\0" "\n" < /proc/1/cmdline | tail -1') workers"
+	$(MAKE) load-seed
+	@echo "flushing the freshness cache so the run starts from a known state..."
+	@docker compose exec -T redis redis-cli flushdb
+	-$(LOAD_ENV) SCRIPT=multitenant.js docker compose --profile load run --rm k6
+	@echo "restoring defaults (file span exporter, fixtures)..."
+	docker compose up -d --wait app
+	@echo "wrote docs/artifacts/load/k6-multitenant.txt"
 
 ## scrape: capture /metrics as a submission artifact.
 # Run it AFTER `make demo` or `make load`, or the histograms are empty and the
 # rate_limit_remaining gauge has no samples — the gauge is fed by a query.
 scrape:
-	curl -fsS $(BASE_URL)/metrics > docs/metrics-scrape.txt
-	@echo "wrote docs/metrics-scrape.txt ($$(wc -l < docs/metrics-scrape.txt) lines)"
+	@mkdir -p docs/artifacts/metrics
+	curl -fsS $(BASE_URL)/metrics > docs/artifacts/metrics/metrics-scrape.txt
+	@echo "wrote docs/artifacts/metrics/metrics-scrape.txt ($$(wc -l < docs/artifacts/metrics/metrics-scrape.txt) lines)"
 
 ## artifacts: regenerate every reproducible submission artifact, in order.
 # demo first (it exercises the stack), then trace, then the scrape — which must
 # come last so it captures metrics the other two produced.
 artifacts: demo trace scrape
-	@ls -la docs/*.txt docs/*.svg
+	@find docs/artifacts -type f | sort
 
-## demo: the scripted walkthrough, teed to docs/demo-output.txt.
+## demo: the scripted walkthrough, teed to docs/artifacts/demo/demo-output.txt.
 # Four calls covering four of the five hard parts with no UI and no observability
 # stack — the artifact insurance, so a slip in Phase 3 or 4 cannot leave the
 # submission with no demo at all.
