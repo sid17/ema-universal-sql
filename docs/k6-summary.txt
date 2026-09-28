@@ -1,0 +1,35 @@
+================================================================================
+ k6 load profile — POST /v1/query
+================================================================================
+
+  target rate          500 RPS for 60s, tenant_load, max_staleness_ms=60000
+  wall clock           84.3s
+
+  --- throughput ---------------------------------------------------------
+  iterations completed  4975
+  iterations dropped    25040
+  requested iterations  ~30000 (500 x 60s)
+  achieved rate         59.0 RPS
+
+  dropped_iterations is reported because constant-arrival-rate SKIPS work it
+  cannot start. A run that drops half its iterations can still post a healthy
+  p(95) — for the half it managed — so omitting this number would overstate
+  the result.
+
+  --- latency (all requests) ---------------------------------------------
+  p(50)                 8681.5ms
+  p(90)                 60001.4ms
+  p(95)                 60001.6ms
+  max                   60003.0ms
+  avg                   18781.1ms
+
+  --- correctness --------------------------------------------------------
+  checks passed         7890 / 9980
+  requests failed       21.00%  (429s in the drain scenario are EXPECTED and excluded)
+
+  --- thresholds ---------------------------------------------------------
+  PASS  checks{scenario:drain_bucket} rate==1.0
+  FAIL  http_req_duration{scenario:federated_query} p(95)<1500
+
+  Thresholds are NOT tuned to pass (ADR-044). A red line here is a finding
+  about this machine and this configuration, reported rather than hidden.

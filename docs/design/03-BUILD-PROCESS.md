@@ -211,7 +211,7 @@ Tick as each phase's green gate passes. Tier and gate detail live in `01-EXECUTI
 | ☑ | **0** scaffold + contracts | MUST | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
 | ☑ | **1** connectors + governance | MUST | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
 | ☑ | **2** SQL pipeline | MUST | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| ☐ | **4** observability + load + README | MUST | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
+| ☑ | **4** observability + load + README | MUST | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
 | ☐ | **3** UI console + Playwright | SHOULD | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
 | ☐ | **Submission gate** (`02-DEFINITION-OF-DONE.md` §1) | — | | | | | | ☐ |
 
