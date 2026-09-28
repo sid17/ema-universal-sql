@@ -1,5 +1,5 @@
 {
-  "_merge_instructions": "This is the BASE hook config (safety only). To add stack-specific hooks: copy this file to .claude/settings.json, then MERGE entries from the stack overlay (e.g. hooks/typescript/settings.json). Add overlay PreToolUse entries into this PreToolUse array. Add PostToolUse as a new key. Do NOT create duplicate 'PreToolUse' keys — JSON silently drops duplicates.",
+  "_merge_instructions": "BASE safety hooks + the Python stack overlay (merged 2026-09-28 for this FastAPI/pytest project). PreToolUse: destructive-command block, 500-line file-size gate, secret block, narrowed config-weakening guard (creation allowed, adding ignore/disable/exclude blocked), pytest unit-test commit gate. PostToolUse: ruff format + report on .py edits. Do NOT create duplicate 'PreToolUse' keys - JSON silently drops duplicates; append to the existing array instead.",
   "hooks": {
     "PreToolUse": [
       {
@@ -14,6 +14,11 @@
             "type": "command",
             "command": "INPUT=$(cat); CMD=$(echo \"$INPUT\" | jq -r '.input.command // empty' 2>/dev/null); if echo \"$CMD\" | grep -qE '^git\\s+commit'; then LARGE=$(find . -name '*.ts' -o -name '*.tsx' -o -name '*.py' | grep -v node_modules | grep -v __pycache__ | grep -v .venv | xargs wc -l 2>/dev/null | awk '$1 > 500 {print \"WARNING: \" $2 \" has \" $1 \" lines\"}'); if [ -n \"$LARGE\" ]; then echo \"$LARGE\"; echo 'Files over 500 lines detected. Decompose before committing.' >&2; exit 2; fi; fi; exit 0",
             "timeout": 30000
+          },
+          {
+            "type": "command",
+            "command": "INPUT=$(cat); CMD=$(echo \"$INPUT\" | jq -r '.input.command // empty' 2>/dev/null); if ! echo \"$CMD\" | grep -qE '^git\\s+commit'; then exit 0; fi; if [ ! -d tests/unit ]; then exit 0; fi; if ! ls tests/unit/test_*.py >/dev/null 2>&1; then exit 0; fi; if [ -x .venv/bin/python ]; then PY=.venv/bin/python; elif command -v python3 >/dev/null 2>&1; then PY=python3; elif command -v python >/dev/null 2>&1; then PY=python; else echo 'WARNING: tests/unit exists but no Python interpreter found - commit gate skipped.'; exit 0; fi; if ! \"$PY\" -m pytest --version >/dev/null 2>&1; then echo \"WARNING: tests/unit exists but pytest is not installed for $PY - commit gate skipped.\"; exit 0; fi; OUT=$(\"$PY\" -m pytest -q tests/unit 2>&1); if [ $? -ne 0 ]; then echo \"$OUT\" | tail -30; echo 'BLOCKED: unit tests failed. Fix them before committing (integration/e2e tests are not run by this gate - they need make up).' >&2; exit 2; fi; exit 0",
+            "timeout": 120000
           }
         ]
       },
@@ -32,8 +37,20 @@
         "hooks": [
           {
             "type": "command",
-            "command": "INPUT=$(cat); FILE=$(echo \"$INPUT\" | jq -r '.input.file_path // empty' 2>/dev/null); if echo \"$FILE\" | grep -qE '(\\.eslintrc|\\.ruff\\.toml|biome\\.json|pyproject\\.toml|tsconfig\\.json)$'; then echo 'BLOCKED: linter/compiler config edit. LLMs must fix code, not weaken rules.' >&2; exit 2; fi; exit 0",
+            "command": "INPUT=$(cat); FILE=$(echo \"$INPUT\" | jq -r '.input.file_path // empty' 2>/dev/null); if ! echo \"$FILE\" | grep -qE '(\\.eslintrc|\\.ruff\\.toml|biome\\.json|pyproject\\.toml|tsconfig\\.json)$'; then exit 0; fi; if [ ! -f \"$FILE\" ]; then exit 0; fi; CONTENT=$(echo \"$INPUT\" | jq -r '.input.content // .input.new_string // empty' 2>/dev/null); if echo \"$CONTENT\" | grep -qiE '(noqa|eslint-disable|type:\\s*ignore|ignore\\s*=|ignore\"\\s*:|disable|strict\\s*=\\s*false|\"strict\"\\s*:\\s*false|--no-verify|exclude\\s*=)'; then echo 'BLOCKED: this edit to a linter/compiler config adds an ignore/disable/exclude rule. LAW 7 - fix the code, not the config. Creating a new config file is allowed; weakening an existing one is not.' >&2; exit 2; fi; exit 0",
             "timeout": 5000
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "INPUT=$(cat); FILE=$(echo \"$INPUT\" | jq -r '.input.file_path // empty' 2>/dev/null); case \"$FILE\" in *.py) ;; *) exit 0 ;; esac; [ -f \"$FILE\" ] || exit 0; if command -v ruff >/dev/null 2>&1; then ruff format \"$FILE\" >/dev/null 2>&1; ruff check \"$FILE\" 2>&1 | head -20; fi; exit 0",
+            "timeout": 15000
           }
         ]
       }

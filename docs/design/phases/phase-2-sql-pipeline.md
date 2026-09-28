@@ -71,7 +71,19 @@ For the canonical `assignee=:user` rule, `entitlement_scope` = `user_id` (the re
 - **Operator caveats:** `LIMIT` is **not** pushed through the join (apply after join); `ORDER BY`+`LIMIT` over a join → re-sort in-engine before limit. A per-source loose bound may be pushed only when provably safe.
 - Output a `QueryPlan`: per-source `{predicates_pushed, columns_to_fetch}` + the residual `{join, order_by, limit, residual_filters, masks}`.
 
-## Stage 5 — FederationEngine (`src/execution/federation.py`, DuckDB)
+## Stage 5 — Federation + assembly — **two modules, not one**
+As originally specced this stage owned fetch orchestration, DuckDB execution, envelope assembly, freshness
+computation, `join_status`/`partial`, and cursor pagination — six responsibilities, comfortably over 500 lines,
+which violates LAW 1 (the pre-commit hook blocks it) and LAW 3. Split it:
+
+- **`src/execution/federation.py`** — `FederationEngine`: call the adapters in parallel, register the arrow
+  tables, run the residual SQL, return raw rows + the per-source `AdapterResponse`s. *Knows DuckDB, knows
+  nothing about the envelope.*
+- **`src/execution/assemble.py`** — `ResultAssembler`: envelope construction, `ColumnMeta` (incl. `masked`),
+  `freshness_ms`, `join_status`/`partial`/`warnings`, and cursor pagination. *Knows the contract, knows
+  nothing about DuckDB.*
+
+### FederationEngine (`src/execution/federation.py`, DuckDB)
 - Call each adapter's `fetch(...)` (Phase 1) **in parallel** with the pushed predicates + `columns_to_fetch`; collect `AdapterResponse`s.
 - **Register + execute (concrete, validated by universql — Card 3):** open an in-memory DuckDB per request (`duckdb.connect(":memory:")`); convert each source's rows to a `pyarrow.Table` and `con.register("github_pull_requests", tbl)` / `con.register("jira_issues", tbl)`; run the residual query (join on `issue_key`, re-apply *every* residual filter authoritatively, `ORDER BY issue.updated DESC`, `LIMIT 50`, project entitled columns) over the registered names; `fetch_arrow_table()` back. `pyarrow.Table` is the internal currency (cheap to register and to serialize); `:memory:` + idempotent re-registration means no teardown.
 - Apply CLS masks in the final projection (`hash` → a stable hash; `null` → null; `redact` → `"••••"`; `drop` → column removed). Mask join keys here (post-join).
@@ -97,6 +109,13 @@ For the canonical `assignee=:user` rule, `entitlement_scope` = `user_id` (the re
 - `test_timeout_partial`: force the Jira mock to time out → `partial=true`, `join_status="incomplete"`, `reason=SOURCE_TIMEOUT`, GitHub rows present, no un-joined passthrough.
 - `test_trichotomy`: one case each — empty (bob-with-no-matches), partial (timeout), error (malformed SQL) — asserting the three shapes are distinct.
 - `test_pagination`: a query with more joined rows than `LIMIT` returns a `next_cursor`; echoing it returns the next, non-overlapping window; the final window returns `next_cursor: null`.
+
+## `make demo` — the artifact insurance *(build it here, at this gate)*
+Both submission artifacts (console screenshot, trace waterfall) currently live in Phases 3 and 4, so a slip
+leaves the submission with **no demo at all**. Close that here: `scripts/demo.sh` curls `/v1/query` four times
+— alice, bob, `max_staleness_ms=0` then `60000`, and a forced Jira timeout — printing each envelope, and tees
+the run to `docs/demo-output.txt`. That single file demonstrates four of the five hard parts with no UI and no
+observability stack. Wire it to `make demo` (target declared in Phase 0).
 
 ## Done when
 `POST /v1/query` runs the canonical query end-to-end through all five stages and every acceptance test is green. The envelope from this phase is what the UI (Phase 3) renders and what the trace (Phase 4) instruments.

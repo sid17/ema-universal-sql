@@ -71,7 +71,21 @@ A source's native failure is normalized through a **match→action table**, not 
 - **Personas:** `alice` (role `support`), `bob` (role `support`). Both real users; RLS differentiates by `assignee`.
 - **Tenants:** `tenant_acme` (full seed) + `tenant_globex` (its own secret + a distinct cached row) — used only by the isolation test.
 
-## `002_seed.sql` — policies (JSONB AST) + budgets
+## Seed configuration — `config/*.yaml` → Postgres
+Authoring format is **YAML, loaded by the seeder**, not hand-written `INSERT`s. Two reasons, both from the
+brief: design-doc §6.2/§8.2 promise the minimal policy config "ships as YAML in the repo" (line 154), and
+line 29 asks that admins onboard connectors "via console or **config**". A YAML loader satisfies both, so
+onboarding a connector becomes *one file + one adapter class* rather than a migration.
+
+- `config/connectors/github.yaml`, `config/connectors/jira.yaml` — `version` + the `CapabilityModel` below →
+  loaded into `connectors(connector_type, version, capabilities JSONB)`.
+- `config/policies.yaml` — the 1 RLS + 1 CLS rule → loaded into `policies` (predicate stays a JSONB AST,
+  never a SQL string).
+- `config/rate_limits.yaml` — budgets → `rate_limit_policies`.
+
+The SQL below is the *resulting rows*, shown so the shape is unambiguous:
+
+### `002_seed.sql` — policies (JSONB AST) + budgets
 ```sql
 INSERT INTO policies (policy_id, tenant_id, connector_type, resource, kind, applies_to, effect, predicate) VALUES
  ('rls-jira-assignee','tenant_acme','jira','issues','RLS','support','allow',

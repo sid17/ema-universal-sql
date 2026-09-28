@@ -4,9 +4,24 @@
 > phase fills a contract that already exists. **Gate:** `make up` healthy; 401 on bad token, 200 shell on good token.
 > Build into the repo layout in [`../00-PROTOTYPE-HLD.md`](../00-PROTOTYPE-HLD.md) §8.
 
+## Task 0 — the de-risking spike *(do this FIRST, before any infra)*
+The intellectual core of the whole prototype is Phase 2's AST work, and as written it sits behind ~4 hours of
+plumbing. Prove it in **60–90 minutes**, in one throwaway script (`spike/ast_spike.py`), with **no** FastAPI,
+Postgres, Redis, or Docker — hardcoded Python dicts for the two datasets:
+
+1. `sqlglot.parse_one(CANONICAL_SQL, read="duckdb")` → `qualify(tree, schema=...)`
+2. AND an RLS `exp.EQ` into the WHERE via `tree.where(..., append=True)`
+3. Rewrite one projection node to `MD5(reporter_email) AS reporter_email`
+4. Flatten the top-level `exp.And` and group leaf predicates by owning table
+5. `duckdb.register()` two `pyarrow.Table`s and run the residual join over them
+
+**Gate:** the canonical query returns joined rows, and the printed per-source predicate split is correct.
+**If this does not work, the plan changes** — better to learn it now than at hour 5. Delete the spike (or keep
+it as `tests/unit/test_ast_spike.py`) once Phase 2 lands the real thing.
+
 ## Deliverables
 1. `docker-compose.yml` + `Dockerfile` (for `app`) — services `app` (FastAPI), `postgres:16`, `redis:7`; `app` waits for pg+redis healthy. The `Dockerfile` is what `docker-compose build` uses; keep it slim (python:3.11-slim + `pip install .`).
-2. `Makefile` — `up` (compose up + wait), `down`, `seed`, `test`, `e2e`, `load`, `fmt`.
+2. `Makefile` — `up` (compose up + wait), `down`, `seed`, `test`, `e2e`, `load`, `demo`, `fmt`. (`demo` is filled in at Phase 2; declare the target now so it is never forgotten.)
 3. `pyproject.toml` — deps: `fastapi`, `uvicorn`, `pydantic>=2`, `pyjwt`, `cryptography` (Fernet), `sqlglot`, `duckdb`, `pyarrow` (DuckDB `register`/`fetch_arrow_table`), `redis`, `psycopg[binary]`, `opentelemetry-sdk`, `prometheus-client`; dev: `pytest`, `pytest-asyncio`, `httpx`, `playwright`.
 4. FastAPI app factory (`src/main.py`) mounting the routes below.
 5. The **contract models** (`src/models/`) — the single source of truth for request/response/errors.

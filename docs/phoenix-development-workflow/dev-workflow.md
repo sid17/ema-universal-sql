@@ -55,10 +55,14 @@ Hooks fire automatically — the agent cannot skip them. Configured in `.claude/
 |------|---------|-------------|
 | **Block destructive commands** | PreToolUse (Bash) | Blocks `rm -rf` on non-build targets, `DROP TABLE`, force push, hard reset |
 | **Block secrets** | PreToolUse (Write/Edit) | Blocks hardcoded API keys, passwords, tokens |
-| **Block config edits** | PreToolUse (Write/Edit) | Blocks agent from weakening linter/compiler configs |
-| **Auto-format + type-check** | PostToolUse (Write/Edit) | Runs prettier + `tsc --noEmit` on every TS/TSX edit |
-| **File size check** | PreToolUse (git commit) | Blocks commits if any file exceeds 500 lines |
-| **Test gate** | PreToolUse (git commit) | Runs `npm test` before commit — must pass |
+| **Guard linter/compiler configs** | PreToolUse (Write/Edit) | *Creating* `pyproject.toml` is allowed; an edit that adds `ignore` / `noqa` / `disable` / `strict = false` / `exclude` to an existing config is blocked (LAW 7) |
+| **File size check** | PreToolUse (git commit) | Blocks commits if any `.py`/`.ts` file exceeds 500 lines (LAW 1) |
+| **Unit-test gate** | PreToolUse (git commit) | Runs `pytest -q tests/unit` via `.venv/bin/python` (falls back to `python3`); blocks the commit on failure. No-ops until `tests/unit/test_*.py` exists. Integration/e2e are deliberately excluded — they need `make up` |
+| **Python auto-format** | PostToolUse (Write/Edit) | `ruff format` on every `.py` edit, plus a non-blocking `ruff check` report |
+
+> **Stack overlay merged 2026-09-28.** This project is Python/FastAPI/pytest, so the base safety hooks were
+> merged with a Python overlay — there is no `npm test` gate and no `tsc --noEmit` pass. If you change stacks,
+> re-read `.claude/settings.json` rather than trusting this table.
 
 ---
 

@@ -20,6 +20,14 @@ Scaffold    Connectors  SQL         UI +        Observability
 
 Each phase ends at a **green gate** (its verify step). A coding agent should not start phase N+1 until phase N's gate passes. Hour estimates mirror your `05-plan.md`; treat them as ordering, not deadlines.
 
+Two things sit outside this spine and are easy to lose:
+- **A spike before Phase 0.** The riskiest work (sqlglot qualify → RLS injection → predicate split → DuckDB) is
+  in Phase 2, behind ~4h of plumbing. `phases/phase-0-scaffold.md` now opens with a 60–90 min throwaway spike
+  that proves it on hardcoded dicts. If it fails, the plan changes — learn that at hour 0, not hour 5.
+- **The submission gate.** Phase gates say "this phase works"; they never say "we can submit."
+  [`02-DEFINITION-OF-DONE.md`](./02-DEFINITION-OF-DONE.md) is that gate, plus the MUST/SHOULD/COULD tiers and
+  the cut order that protect the submission when the hour boxes slip. Read it before Phase 0, not after Phase 4.
+
 ---
 
 ## Phase 0 — Scaffold & contracts  *(≈ hour 1–2)*
@@ -182,5 +190,7 @@ Audited against `./take_home.md`. The detailed **Prototype Requirements (lines 1
 | quickstart (containerized) + 1–2 tests (51,166) | P0 docker-compose/Makefile; tests across P0–P4 |
 | screenshot of metrics/trace + note (52,167) | P4 `docs/` + README |
 | grant read to souvik-sen@ / careers@ (50,165) | P4 README; design-doc §6.4 |
+| admins onboard connectors via **config**; connectors **versioned** (29–30) | P1 `config/connectors/*.yaml` → `connectors.capabilities` JSONB + `.version`; admin *console* is a stated non-goal (HLD §7) |
+| **cost controls** in the HLD (10, 38, bonus 177) | design-doc scope, not prototype: Risk 6 + §5.2 + cost table. Gap noted in `02-DEFINITION-OF-DONE.md` §6 — worth one dedicated subsection in the submitted doc |
 
 **Stated non-goals (built as prose in the README, not code)** — deployment modes without code changes (31), async job runner (92), materialization spill (95), Vault+KMS (99), IaC/Helm/canary (125–126), DR multi-region (127): these are **HLD/design-doc** scope; the prototype maps each to its production counterpart per HLD §7.

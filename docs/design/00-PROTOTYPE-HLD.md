@@ -3,7 +3,8 @@
 > **This document:** the high-level design for the *runnable prototype* (design-doc deliverable #3). It is a
 > deliberately scoped-down slice of [`./design-doc.md`](./design-doc.md) — enough to *prove* the five hard
 > parts on one real query, not to ship the platform. Read this first, then [`01-EXECUTION-PLAN.md`](./01-EXECUTION-PLAN.md)
-> for build order, then `phases/phase-*.md` for the agent-buildable specs.
+> for build order, [`02-DEFINITION-OF-DONE.md`](./02-DEFINITION-OF-DONE.md) for the submission gate and scope
+> tiers, then `phases/phase-*.md` for the agent-buildable specs.
 >
 > **Stack (locked):** Python 3.11 · FastAPI · sqlglot · DuckDB · Redis · Postgres · Fernet · Playwright · k6 · OpenTelemetry + Prometheus. All via `docker-compose`.
 > **Scenario (locked):** one canonical cross-app query — open GitHub PRs joined to their in-progress Jira issues, entitled to the caller.
@@ -148,6 +149,9 @@ Each non-goal gets one README paragraph pointing at where the full design covers
 - **DRR fair scheduler + per-connector bulkheads** — the design's fairness *policy* (design §4.1) is a multi-worker scheduling concern with no meaning in a single process. The prototype proves fairness at the **token-bucket** layer (per tenant→connector→user); DRR + bulkheads are described in the README, not built.
 - **Residency enforcement** — `tenant.residency` is seeded and audited, but placement enforcement (region-pinning storage/compute) is meaningless in a single local deployment; described, not enforced.
 - **Materialization spill to disk** — DuckDB joins in-memory; the spill seam is a documented code path, not exercised.
+- **Admin console for connector onboarding** — connectors are **data, not code** (`config/connectors/*.yaml`
+  → `connectors.capabilities` JSONB + `connectors.version`), so onboarding "via config" (take-home line 29) is
+  real and versioning is real; the *console UI* for it is described, not built.
 - **Real OIDC / Vault / KMS** — mock JWT + Fernet; the README maps each to its production counterpart.
 - **k8s / Helm / Terraform / autoscaling** — described in README + design §5, not built.
 
@@ -166,12 +170,14 @@ universal-sql-prototype/
 │   ├── sqlparse/               # SQLParser (sqlglot): parse, validate subset, extract tables/predicates
 │   ├── entitlement/            # EntitlementEngine: RLS predicate + CLS mask INTO the AST
 │   ├── planner/                # QueryPlanner: pushdown split + projection-union guard + capability check
-│   ├── execution/              # FederationEngine (DuckDB)
+│   ├── execution/              # federation.py (DuckDB) + assemble.py (envelope/freshness/cursor)
 │   ├── connectors/             # BaseConnectorAdapter, GitHubConnectorAdapter, JiraConnectorAdapter, mock data
 │   ├── governance/             # TokenBucketRateLimiter, FreshnessCacheManager, SecretsManagerClient, AuditLogger
 │   ├── models/                 # DTOs: UserContext, QueryPlan, AdapterResponse, QueryExecutionResult, envelope
 │   ├── control_plane/          # Postgres access + seed scripts
 │   └── observability/          # OTel spans + /metrics
+├── config/                     # connectors/*.yaml · policies.yaml · rate_limits.yaml (seeded at boot)
+├── scripts/demo.sh             # make demo — envelope for alice/bob/staleness/timeout
 ├── ui/                         # query console (SQL editor, token field, table + metadata panel)
 ├── tests/
 │   ├── unit/                   # token bucket, cache, RLS/CLS AST injection, planner guard
