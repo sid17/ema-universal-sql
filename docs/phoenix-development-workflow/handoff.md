@@ -1,6 +1,6 @@
 # Handoff
 
-> Last updated: 2026-09-28 (Session 1)
+> Last updated: 2026-09-28 (Session 2)
 
 ## Project
 
@@ -8,123 +8,156 @@ Take-home for Ema: **Universal SQL across enterprise apps** — a federated quer
 SQL query (GitHub PRs ⋈ Jira issues) end-to-end with query-time entitlement (RLS/CLS compiled into the AST),
 per-tenant rate limiting, staleness-controlled caching, and honest partial-result degradation.
 
-This session produced **no application code**. It produced the design set the build will follow. A new agent's
-job is to start building Phase 0.
+Session 1 produced the design set. **Session 2 built, reviewed and committed Phase 0.** The next agent starts
+Phase 1.
 
 ## Plan Status
 
-No plans created yet — `docs/phoenix-development-workflow/plans/` and `specs/` are empty. The design set is
-complete and committed.
-
 | Phase | Tier | Spec | Plan | Status | Commits |
 |---|---|---|---|---|---|
-| 0 — scaffold + contracts | MUST | `docs/design/phases/phase-0-scaffold.md` | — | Not started | — |
+| 0 — scaffold + contracts | MUST | `specs/2026-09-28-phase0-scaffold.md` | `plans/2026-09-28-phase0-scaffold.md` (98/98) | ✅ **Done** | 11, `e5c2dd0`…`158102b` |
 | 1 — connectors + governance | MUST | `docs/design/phases/phase-1-connectors.md` | — | Not started | — |
 | 2 — SQL pipeline | MUST | `docs/design/phases/phase-2-sql-pipeline.md` | — | Not started | — |
 | 4 — observability + load + README | MUST | `docs/design/phases/phase-4-observability.md` | — | Not started | — |
 | 3 — UI console + Playwright | SHOULD | `docs/design/phases/phase-3-ui-e2e.md` | — | Not started | — |
 
-Phase 4 is listed before Phase 3 on purpose — see Key Decisions.
+Build in **tracker order (0 → 1 → 2 → 4 → 3)**, not numeric order — Phase 4 holds four MUST-tier deliverables
+while Phase 3 is SHOULD-tier, and both depend only on Phase 2.
+
+**Phase 0 gate: green.** 115 unit + 17 integration tests, `ruff check` clean with no ignore list, cold start
+**46.7s** including a full image build (gate: 60s), largest file 307 lines.
 
 ## What Was Done This Session
 
+Phase 0 ran the full five-step loop from `03-BUILD-PROCESS.md`: spike → research → ADRs → spec → plan (human
+gate) → build → review → commit.
+
 | Commit | What |
 |---|---|
-| `91e6df3` | Brought the source-of-truth docs into the repo: `take_home.md` (the brief), `design-doc.md` (full, incl. §6 prototype + §8 appendix), the 5 diagrams, and the OSS prior-art cards. Rewrote relative links (`../../` → `./`) now that siblings live alongside. The 7 prototype specs are byte-identical to their originals. |
-| `6c50403` | Wrote `02-DEFINITION-OF-DONE.md` (submission gate, five hard parts → one command each, MUST/SHOULD/COULD tiers, cut order). Merged a Python hook overlay into `.claude/settings.json`. Closed 4 structural spec gaps. |
-| `66a6e66` | Folded in 8 deferred spec fixes; closed 4 deliverables that the phase sequence consumed but no phase built; added the scope ledger + hour ladder. |
-| `e71f414` | Wrote `03-BUILD-PROCESS.md` — the per-phase command loop and what each step may decide. |
+| `e5c2dd0` | **Corrected research Card 1 from the AST spike.** See "What Didn't Work" — this is the most valuable thing the session produced. |
+| `e2e23ee` | Kickoff trail: `research-repos.md`, `architecture.md` (18 ADRs), the spec, and the 20-task plan. |
+| `d0fff0d` | `pyproject.toml` (all Phase 0–4 deps up front), `Dockerfile`, three-service `docker-compose.yml`, `Makefile`, `.env.example`. |
+| `d040fe3` | Contract models: `QueryEnvelope` (HLD §4 verbatim), the six-code `ErrorCode`, `UserContext`, `QueryRequest`, `config.py`. |
+| `d29ae2f` | Control plane: 7-table schema, idempotent migration runner, TTL-cached repository, `002_seed_tenants.sql`. |
+| `01bc4e7` | Gateway: mock JWT auth, tenant gate, scope gate, six routes. |
+| `2b3fc98` | Observability: `@stage_span`, Prometheus registry, JSONL span export, structured access log. |
+| `092981d` | FastAPI factory + the integration gate against the running stack. |
+| `1e0ab19` | Promoted the AST spike to `tests/unit/test_ast_spike.py`. |
+| `254ea3f` | README: quickstart + the mock-IdP caveat. |
+| `158102b` | `.env.example` signing-key fix. |
 
-**Read these four, in this order, before doing anything:**
-1. `docs/design/00-PROTOTYPE-HLD.md` — what the prototype must prove (§1) and the provenance rails (§9)
-2. `docs/design/01-EXECUTION-PLAN.md` — build order + the **scope ledger** ("where am I, what's left")
-3. `docs/design/02-DEFINITION-OF-DONE.md` — the submission gate and scope tiers
-4. `docs/design/03-BUILD-PROCESS.md` — the exact commands, and the locked-decision list
+**Independent security review found no blocking issues.** Verified by actually forging tokens against the
+repo's own modules: `alg:none`, algorithm confusion (HS512 with the *correct* secret), RS256 with an attacker
+keypair, missing/wrong `exp`/`aud`/`iss` — all rejected. No SQL injection (every query funnels through one
+parameterised chokepoint). No fail-open path through `get_current_user`; a missing repository fails *closed*.
+The post-filter ban holds structurally.
 
 ## What Didn't Work
 
-Nothing was abandoned — no code was written. But four things were **found wrong and fixed**, and the pattern
-behind them is the main thing to carry forward:
+Six things were found wrong and fixed. The pattern connecting most of them: **a claim that was documented but
+not true, where nothing failed loudly.**
 
-- **Three phase specs described behaviour that could not have passed.** Phase 3's `cls_mask_visible` asserted
-  `••••` while the seeded mask was `hash` (the cell value is an MD5 digest); `freshness_knob` expected a cache
-  hit on the first run after a `beforeEach` that flushes Redis; and the CLS mask was specified twice, in two
-  different stages. **Lesson:** when a spec asserts a rendered value, check what the data layer actually
-  produces.
-- **The adapter `fetch()` order spent a rate-limit token before checking the cache**, which silently falsified
-  three other guarantees in the same document. Fixed to cache → token → secret.
-- **Four deliverables were consumed by the phase sequence and built by no phase** — most importantly
-  `src/control_plane/`, which three phases read through. It existed only as a line in the repo-layout tree.
-- **The hook config was TypeScript-shaped.** Its config guard would have blocked Phase 0's `pyproject.toml`
-  outright, and the documented `npm test` commit gate was never installed. My first replacement gate was also
-  inert because it invoked `python`, which is not on PATH here (only `python3`).
+- **The AST spike's first run silently disabled all pushdown.** Research Card 1 said to split predicates with
+  `where.this.flatten()`. Once RLS is injected that is wrong — `tree.where(pred, append=True)` routes through
+  `exp.and_`, which wraps the existing WHERE in an `exp.Paren`; `flatten()` prunes at the paren and returns the
+  whole nested AND as one leaf, so **zero** predicates were pushable to GitHub. The query still returned
+  correct rows. Every result-based test would have stayed green while the design doc's central claim quietly
+  became false. Must recurse through `.unnest()`. **This is why the spike existed, and it justified its cost.**
+- **`UserContext` claimed an immutability it did not have — twice.** First version used `roles: list`, so
+  `context.roles.append("admin")` succeeded inside the object whose roles select the RLS policies. The first
+  *fix* coerced only inside `AuthContextExtractor` — one construction site, leaving every test fixture and
+  future caller free to rebuild the seam. An independent review caught that. The guarantee now lives on the
+  type via `__post_init__`.
+- **The tenant gate made Phase 0 unable to pass its own gate.** The phase file says all three of: build the
+  tenant-status gate, seed nothing, and return 200 on a valid token. With `tenants` empty every authenticated
+  request was correctly refused `403`. Resolved by seeding tenants in Phase 0 — the alternative (letting
+  unknown tenants through) fails open.
+- **The 403 bodies were a tenant-enumeration oracle.** `Unknown tenant: X` vs `Tenant X is offboarding` are
+  distinguishable, and the mock IdP lets anyone name any tenant. Now one byte-identical body for both.
+- **The control-plane cache was unbounded and attacker-growable.** Keyed by `tenant_id` from a token anyone can
+  mint; misses cached too. Measured 50,000 entries from 50,000 ids. Now bounded + LRU.
+- **Two tests asserted nothing.** `test_migrations_created_the_control_plane` re-asserted `/healthz == 200`
+  (passes against an empty database); `test_test_reset` accepted "404 or 200" and skipped on 200 (passes if the
+  guard is deleted entirely). Both rewritten.
+
+Minor time sinks worth not repeating: FastAPI 0.141 wraps `include_router` in an `_IncludedRouter` so routes no
+longer appear flat in `app.routes` (introspection misleads — use a TestClient); `ConsoleSpanExporter` binds
+`sys.stdout` at import, so `capsys` cannot capture it.
 
 ## What's Next
 
-- **Immediate next action: the Phase 0 AST spike.** `docs/design/phases/phase-0-scaffold.md` opens with it.
-  One throwaway script, hardcoded dicts, **no** FastAPI/Postgres/Redis/Docker: `parse_one` → `qualify` → AND an
-  RLS `exp.EQ` into the WHERE → rewrite one projection to `MD5(...) AS reporter_email` → flatten the top-level
-  `exp.And` and group predicates by owning table → `duckdb.register()` two pyarrow tables and run the residual
-  join. 60–90 minutes. **If it doesn't behave as `research/prototype-prior-art.md` Card 1 claims, Phase 2's
-  design changes** — so this runs before anything else, including research.
-- Then the Phase 0 loop from `03-BUILD-PROCESS.md`: lightweight `/github-research` → `/architecture-extraction`
-  → `/spec` → `/plan-phase` (**hard gate: human reviews the plan**) → `/build-phase`.
-- Plan file: none yet. Next: **Phase 0**.
-- Last completed: the design set (4 commits above).
+- **Immediate next action: Phase 1** — `docs/design/phases/phase-1-connectors.md`. Two mock adapters with
+  capability models, `TokenBucketRateLimiter` (Redis Lua, with burst), `FreshnessCacheManager`,
+  `SecretsManagerClient` (Fernet), and the YAML seed.
+- Run the same loop: lightweight `/github-research` → `/architecture-extraction` → `/spec` → `/plan-phase`
+  (**hard gate: human reviews the plan**) → `/build-phase`.
+- Plan file: none yet for Phase 1. Last completed: **Phase 0, all 20 tasks**.
 
-**Two open questions for the user — ask before building, they change Phase 0's shape:**
-1. **Effort lever.** As specified this is ≈18–24h (≈15–20h for MUST-only: 0→1→2→4), against the brief's ~6–10h
-   target. Dropping Phase 3 saves 3–4h (`make demo` carries the demo); dropping the whole COULD list saves
-   another 2–3h, landing near 12–14h. Which lever?
-2. **The submitted Google Doc is missing §6 and §8.** `synced-gdoc/.../01_tab-1.md` runs 1→2→3→4→(5)→(7) with no
-   §6 *Prototype & Scenario Walkthrough* and no §8 *Appendix* — so the artifact reviewers read is missing the
-   canonical query, the response envelope, the six-code error table, the policy YAML, the DDL, **and §6.4, which
-   is where the access grant to `souvik-sen@` / `careers@` is stated** (submission checklist lines 50/165). Both
-   sections exist in `docs/design/design-doc.md`. This is a paste, and it is the highest-value fix available.
+**Two open questions for the user, both carried from Session 1:**
+
+1. **Effort lever still undecided.** Deferred with *"don't rely on the time mentioned, let's build Phase 0
+   first and I'll take it from there."* Now that Phase 0's real cost is known, worth revisiting: MUST-only
+   (0→1→2→4) versus adding Phase 3 and/or the COULD list.
+2. **The submitted Google Doc is still missing design-doc §6 and §8** — including §6.4, where the access grant
+   to `souvik-sen@` / `careers@` is stated (submission checklist lines 50/165). Both sections exist in
+   `docs/design/design-doc.md`. This is a paste, and it is still the highest-value fix available.
 
 ## Key Decisions
 
-- **Build order is 0 → 1 → 2 → 4 → 3.** Phases 3 and 4 both depend only on Phase 2, and Phase 4 holds four
-  MUST-tier deliverables (k6, Prometheus metric, trace, README) while Phase 3 is SHOULD-tier. File names keep
-  their original numbers.
-- **Sequential, not parallel.** The phases *are* separable by directory (`src/main.py` is the only shared file),
-  and P1 ∥ P2a is a clean seam if wanted — but the human plan-review gate serializes the work anyway, P2a's
-  design depends on the spike outcome, and the saving is 2–3h of 18–24h. Full reasoning in
-  `03-BUILD-PROCESS.md`.
-- **Front-load observability.** Build the OTel span decorator and Prometheus registry in Phase 0, decorate each
-  stage in Phase 2 *as it is written*, leaving Phase 4 as only k6 + artifacts + README. Free — no dependency
-  change, no merge conflict.
-- **Locked decisions, not to be re-opened by any step:** the stack, mock-only connectors, policy as JSONB
-  predicate AST, the equijoin, RLS `assignee = :user`, CLS mask `reporter_email` with `mask: hash`, the canonical
-  query verbatim, every rail in HLD §9, and the three non-negotiables in `02-DEFINITION-OF-DONE.md` §4. A step
-  that thinks one is wrong **stops and says so** rather than quietly building something else.
-- **Skip `/grilling`** (the brief is the requirements) and **do not run `/kickoff`** (its Phase-1 gate wants that
-  grilling) or **`/project-setup`** (would overwrite the hand-tuned `CLAUDE.md`). Invoke `/github-research`,
-  `/architecture-extraction`, `/spec` directly.
+- **Four new ADRs**, all Accepted, in `docs/kickoff/v1/architecture.md`:
+  **015** `/metrics` is one route we own (collectors via `.instrument(app)`, never `.expose(app)`) ·
+  **016** no OTLP exporter or Jaeger container — compose stays three services against the 60s cold-start gate ·
+  **017** identity carries **both** OAuth `scopes` and SCIM `roles`, with authorization layered L0–L4 ·
+  **018** spans export to JSONL off-thread (amends 016).
+- **The authorization rule to not break:** *an endpoint check may consult the token and the control plane,
+  never a result row.* L0 authN → L1 tenant → L2 scope at the gateway; L3 connector grant and L4 RLS/CLS are
+  Phase 2, and L4 is **compiled into the plan**. A test asserts `require_scope` takes no repository.
+- **Observability is front-loaded.** The span decorator and Prometheus registry exist now, so Phase 2
+  decorates each stage as it writes it and Phase 4 shrinks to k6 + artifacts + README.
+- Locked decisions from Session 1 are unchanged and remain closed: the stack, mock-only connectors, policy as
+  JSONB predicate AST, the equijoin, RLS `assignee = :user`, CLS mask `reporter_email` (`hash`), the canonical
+  query verbatim, every rail in HLD §9, and the three non-negotiables in `02-DEFINITION-OF-DONE.md` §4.
 
 ## Watch-outs
 
-- **`python` is not on PATH — use `python3`** (or `.venv/bin/python` once it exists). This is what made the first
-  version of the commit-test gate silently pass everything.
-- **Hooks are live and will block you** (`.claude/settings.json`, all verified): files over 500 lines block the
-  commit; `pytest -q tests/unit` must pass to commit (no-ops until `tests/unit/test_*.py` exists); adding
-  `ignore`/`noqa`/`disable`/`strict = false` to a config is blocked, though *creating* `pyproject.toml` is fine;
-  `ruff format` runs on every `.py` edit.
-- **HLD §9 is the anti-drift rail.** Every value pinned there (mask kind, tiebreaker, cache TTL semantics, budget
-  profiles, persona row counts, `ENTITLEMENT_DENIED` vs default-deny) is depended on by more than one phase.
-  Changing one silently breaks another phase's test.
-- **`FederationEngine` must stay split** into `federation.py` (DuckDB) + `assemble.py` (envelope/freshness/
-  cursor). As originally specced it owned six responsibilities and would breach LAW 1 and LAW 3 — the commit hook
-  blocks it at 500 lines.
-- **`docs/design/design-doc.md` is a reference copy, not the submission.** Deliverables 1 and 2 are the Google
-  Doc; this repo is deliverables 3 and 4. `02-DEFINITION-OF-DONE.md` §5 has the mapping, and the README must say
-  it in one line or a reviewer will be confused.
-- **Two personas, not one, carry the RLS demo:** alice 3 rows, bob **1** row (not 0 — a count that collapses to
-  zero is indistinguishable from a broken query), carol 0 rows for the `empty` leg of the trichotomy.
-- **`tenant_acme`'s GitHub budget is deliberately 5 req/60s** for the 429 demo. k6 must target `tenant_load`, or
-  the load run is 30k throttled requests measuring nothing.
-- **The canonical query cannot demonstrate CLS** — it projects four columns and none is `reporter_email`. That is
-  why the console ships a second "CLS demo" preset. Do not "fix" this by editing the canonical query; HLD §9 pins
-  it to design-doc §6.1 and changing it desyncs the two deliverables.
-- **The README grows per phase**, starting in Phase 0. It is brief deliverable #4 and a submission gate; writing
-  it only at the end means a Phase 4 slip loses a required deliverable.
+These will bite the next session specifically.
+
+- **Phase 1's seed file must be `003_seed.sql`.** `002_seed_tenants.sql` took the `002_` slot (see "What Didn't
+  Work"). The execution plan still calls Phase 1's seed `002_seed.sql` — it is wrong.
+- **The per-request deadline is STORED BUT NOT ENFORCED.** `routes.py` sets `request.state.deadline_ms` and
+  nothing reads it. The spec describes it as "bounding the whole pipeline", so **Phase 2 must actually enforce
+  it** — otherwise a slow source hangs the request instead of degrading to `partial`, which is brief line 84.
+  Left deliberately: there is no pipeline to bound yet.
+- **Phase 2 must normalise `query_text` before writing `audit_logs` rows.** A predicate literal like
+  `WHERE reporter_email = 'x@acme.com'` would put in the audit table exactly the PII the CLS rule strips from
+  the result. sqlglot makes parameterising it nearly free at that point.
+- **Phase 4 must run k6 with `OTEL_EXPORTER=none`** and capture the waterfall from a separate `file`-mode run.
+  The variable is plumbed through compose. Exporting during the load run is overhead on the number k6 reports.
+- **`src/models/` is frozen.** Both P1 and P2 code against it. Changing the envelope means changing the HLD,
+  the phase specs *and* the submitted design doc together.
+- **The mock IdP mints any tenant/role/scope unauthenticated**, so the tenant and scope gates are
+  *demonstrable, not enforceable*. Documented in the README. What stays adversarially meaningful is that
+  entitlement is compiled into the plan — do not let Phase 2 weaken that.
+- **`python` is not on PATH — use `.venv/bin/python`** (pinned to 3.11.15 via `uv`).
+- **Hooks are live**: files over 500 lines block the commit; `pytest -q tests/unit` must pass to commit (so
+  `tests/unit` must stay infra-free); adding `ignore`/`noqa`/`disable` to a config is blocked; `ruff format`
+  runs on every `.py` edit.
+- **`FederationEngine` must stay split** into `federation.py` + `assemble.py` when Phase 2 builds it, or it
+  breaches LAW 1 and LAW 3 and the commit hook blocks it.
+- **Two personas, not one, carry the RLS demo:** alice 3 rows, bob **1** (not 0 — a count that collapses to
+  zero is indistinguishable from a broken query), carol 0 for the `empty` leg.
+- **`tenant_acme`'s GitHub budget is deliberately 5 req/60s** for the 429 demo. k6 must target `tenant_load`.
+
+## Key Files
+
+| File | Why it matters |
+|---|---|
+| `docs/design/00-PROTOTYPE-HLD.md` §9 | the provenance rails — every value pinned there is depended on by more than one phase |
+| `docs/design/02-DEFINITION-OF-DONE.md` | the submission gate, scope tiers, and the three non-negotiables |
+| `docs/design/03-BUILD-PROCESS.md` | the per-phase loop and the phase tracker (Phase 0 ticked) |
+| `docs/kickoff/v1/architecture.md` | 18 ADRs, all Accepted and closed to re-decision |
+| `docs/design/phases/phase-1-connectors.md` | **the next thing to build** |
+| `src/models/envelope.py` | the frozen response contract every later phase fills |
+| `src/gateway/deps.py` | the authorization layering, and the rule that keeps it honest |
+| `src/control_plane/repository.py` | the cached read layer P1 and P2 both go through |
+| `tests/unit/test_ast_spike.py` | the promoted spike — Phase 2 rewrites this against the real planner |
