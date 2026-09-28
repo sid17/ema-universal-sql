@@ -9,7 +9,17 @@
 
 ---
 
-## 0. STOP — read this before you touch anything
+## 0. STATUS — 2026-09-28
+
+**Phase 4 is committed** (12 commits ending `837a9e2`). The §0 stop sign below is therefore spent;
+it is kept for the record. T501-T505 are **built**; T506 is superseded by
+`2026-09-28-phase5b-load-test-execution.md`, which carries the live status table. The encrypted
+materialization half of T503 is **not** built — spilling is hard-disabled by default, which is the
+safe half; the opt-in encrypted path remains designed only.
+
+---
+
+## 0b. The original stop sign — read this before you touch anything
 
 **Nothing from Phase 4 is committed.** `git status` shows ~42 entries (22 modified, 20 new). The whole of
 Phase 4 — spans, histograms, the gauge feed, simulated latency, the waterfall renderer, the k6 profile, the
