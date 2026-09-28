@@ -29,4 +29,11 @@ ENV PYTHONPATH=/app
 
 EXPOSE 8000
 
-CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# 8 workers by default. Measured ~4x the throughput of one: a single event loop
+# serialises every request behind ~15ms of synchronous work and knees at ~50-65
+# RPS, where eight hold ~200+. Override with `WORKERS=1` for a single-process
+# run (debugging, or reading /metrics without the multiprocess collector).
+ENV WORKERS=8 \
+    PROMETHEUS_MULTIPROC_DIR=/tmp/prometheus
+
+CMD ["/app/scripts/entrypoint.sh"]
