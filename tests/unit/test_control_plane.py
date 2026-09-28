@@ -136,7 +136,7 @@ def test_each_read_has_its_own_cache_slot(repo, pool):
     repo.get_tenant("tenant_acme")
     repo.get_tenant_connectors("tenant_acme")
     repo.get_capabilities("github")
-    repo.get_policies("tenant_acme", ["github"], ["pull_requests"], ["support"])
+    repo.get_policies("tenant_acme", ["github"], ["pull_requests"])
     repo.get_rate_limit_policy("tenant_acme", "github")
 
     assert pool.count == 5
@@ -145,7 +145,7 @@ def test_each_read_has_its_own_cache_slot(repo, pool):
     repo.get_tenant("tenant_acme")
     repo.get_tenant_connectors("tenant_acme")
     repo.get_capabilities("github")
-    repo.get_policies("tenant_acme", ["github"], ["pull_requests"], ["support"])
+    repo.get_policies("tenant_acme", ["github"], ["pull_requests"])
     repo.get_rate_limit_policy("tenant_acme", "github")
 
     assert pool.count == 5
@@ -153,18 +153,43 @@ def test_each_read_has_its_own_cache_slot(repo, pool):
 
 def test_policy_cache_key_is_order_independent(repo, pool):
     """The same scope in a different order is the same query, not a cache miss."""
-    repo.get_policies("tenant_acme", ["github", "jira"], ["pull_requests"], ["support"])
-    repo.get_policies("tenant_acme", ["jira", "github"], ["pull_requests"], ["support"])
+    repo.get_policies("tenant_acme", ["github", "jira"], ["pull_requests"])
+    repo.get_policies("tenant_acme", ["jira", "github"], ["pull_requests"])
 
     assert pool.count == 1
 
 
-def test_policy_cache_distinguishes_roles(repo, pool):
-    """Two callers with different roles must not share an entitlement result."""
-    repo.get_policies("tenant_acme", ["jira"], ["issues"], ["support"])
-    repo.get_policies("tenant_acme", ["jira"], ["issues"], ["admin"])
+def test_the_policy_read_is_not_filtered_by_role(repo, pool):
+    """**Phase 2 correction.** This read deliberately ignores roles.
 
-    assert pool.count == 2
+    It used to take a ``roles`` argument and filter on it in SQL, and that was a
+    fail-open bug rather than an optimization. Default-deny asks *"is this
+    resource governed by a policy that does not match me?"* — and a role-filtered
+    read cannot answer it. A caller whose roles match nothing got an empty list,
+    the engine concluded the resource was ungoverned, and the query ran
+    **unrestricted**: the caller with no grant at all was handed every row.
+
+    Role matching now lives in exactly one place,
+    ``src.entitlement.engine.applies_to``, where it is reviewable as an
+    authorization decision instead of half a SQL WHERE clause.
+    """
+    sql, params = None, None
+    repo.get_policies("tenant_acme", ["jira"], ["issues"])
+    sql, params = pool.queries[0]
+
+    assert "applies_to" not in sql.replace("applies_to,", ""), (
+        "the policy read must not filter by role — see the docstring"
+    )
+    assert params == ("tenant_acme", ["jira"], ["issues"])
+
+
+def test_the_policy_cache_key_does_not_include_roles(repo, pool):
+    """Follows from the read above: two callers on the same resources share one
+    cached policy set, and each then applies its own role filter."""
+    repo.get_policies("tenant_acme", ["jira"], ["issues"])
+    repo.get_policies("tenant_acme", ["jira"], ["issues"])
+
+    assert pool.count == 1
 
 
 # --------------------------------------------------------------------------
@@ -205,12 +230,18 @@ def test_missing_rows_are_cached_too():
 
 
 def test_policies_read_scopes_to_tenant_and_enabled(repo, pool):
-    repo.get_policies("tenant_acme", ["jira"], ["issues"], ["support"])
+    """Scoped by tenant, by resource and by `enabled` — and by nothing else.
+
+    The `applies_to = '*'` clause this used to assert is gone with the rest of
+    the role filter; wildcard policies are candidates because ALL policies on
+    the resource are candidates, and `applies_to` is matched in the engine.
+    """
+    repo.get_policies("tenant_acme", ["jira"], ["issues"])
     sql, params = pool.queries[0]
 
     assert "enabled = true" in sql
     assert params[0] == "tenant_acme"
-    assert "applies_to = '*'" in sql, "wildcard policies must always be candidates"
+    assert "tenant_id = %s" in sql, "a policy read must never span tenants"
 
 
 # --------------------------------------------------------------------------

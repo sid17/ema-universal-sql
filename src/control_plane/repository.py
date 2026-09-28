@@ -181,17 +181,29 @@ class ControlPlaneRepository:
         tenant_id: str,
         connectors: Iterable[str],
         resources: Iterable[str],
-        roles: Iterable[str],
     ) -> list[dict[str, Any]]:
-        """Enabled RLS/CLS policies matching this query's scope and the caller's roles.
+        """**Every** enabled policy on the resources this query references.
 
-        ``applies_to = '*'`` is always included alongside the caller's named
-        roles. Deny-overrides and default-deny are the *engine's* job (ADR-010);
-        this read only narrows the candidate set.
+        Scoped by tenant and by resource — but deliberately **not by role**.
+
+        This read used to carry ``AND (applies_to = ANY(roles) OR applies_to =
+        '*')``, and that was a fail-open bug rather than an optimization.
+        Default-deny asks *"is this resource governed by a policy that does not
+        match me?"*, and a role-filtered read cannot answer it: a caller whose
+        roles match nothing gets an empty list, the engine concludes the
+        resource is ungoverned, and the query runs **unrestricted**. The caller
+        with no grant at all is exactly the caller who would be handed every
+        row. It was caught by ``test_default_deny_is_empty`` returning the full
+        8-row unfiltered baseline.
+
+        So role matching lives in one place — :func:`src.entitlement.engine.applies_to`
+        — where it is an authorization decision that can be read, reviewed and
+        tested, rather than half here in a SQL ``WHERE`` clause and half there.
+        The policy set for one tenant is a handful of rows; filtering them in
+        Python costs nothing.
         """
         connector_key = tuple(sorted(connectors))
         resource_key = tuple(sorted(resources))
-        role_key = tuple(sorted(roles))
 
         def load() -> list[dict[str, Any]]:
             return self._query(
@@ -199,13 +211,12 @@ class ControlPlaneRepository:
                 "       predicate, column_name, mask, version "
                 "FROM policies "
                 "WHERE tenant_id = %s AND enabled = true "
-                "  AND connector_type = ANY(%s) AND resource = ANY(%s) "
-                "  AND (applies_to = ANY(%s) OR applies_to = '*')",
-                (tenant_id, list(connector_key), list(resource_key), list(role_key)),
+                "  AND connector_type = ANY(%s) AND resource = ANY(%s)",
+                (tenant_id, list(connector_key), list(resource_key)),
             )
 
         return self._cache.get_or_load(
-            ("policies", tenant_id, connector_key, resource_key, role_key), load
+            ("policies", tenant_id, connector_key, resource_key), load
         )
 
     def get_rate_limit_policy(self, tenant_id: str, connector_type: str) -> dict[str, Any] | None:
