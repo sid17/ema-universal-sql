@@ -9,6 +9,10 @@ Every file here is **generated**, never hand-edited. Regenerate with `make artif
 | `trace/` | `make trace` | one request's stage waterfall (`.txt`, `.svg`, `.png`) |
 | `metrics/` | `make scrape` | `GET /metrics` with real samples |
 | `demo/` | `make demo` | the scripted walkthrough, teed verbatim |
+| `connectors/` | `make connectors` | what goes in and out of each connector — the request it would send, the response it parses, pagination, and the rate-limit refusal |
+
+`make connectors` queries `tenant_load` and drains `tenant_globex`, never `tenant_acme` —
+`make demo` needs acme's 5+2 GitHub budget intact for its 429 to be deterministic.
 
 Run `make scrape` **after** a demo or load run — the histograms are empty and the
 `rate_limit_remaining` gauge has no samples until a query has executed.
