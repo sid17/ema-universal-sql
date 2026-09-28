@@ -27,6 +27,9 @@ Two things sit outside this spine and are easy to lose:
 - **The submission gate.** Phase gates say "this phase works"; they never say "we can submit."
   [`02-DEFINITION-OF-DONE.md`](./02-DEFINITION-OF-DONE.md) is that gate, plus the MUST/SHOULD/COULD tiers and
   the cut order that protect the submission when the hour boxes slip. Read it before Phase 0, not after Phase 4.
+- **The build loop.** [`03-BUILD-PROCESS.md`](./03-BUILD-PROCESS.md) is the command sequence per phase
+  (lightweight research → architecture formalization → spec → plan → build), what each step may and may not
+  decide, and the phase tracker.
 
 ---
 

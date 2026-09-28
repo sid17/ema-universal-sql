@@ -4,7 +4,8 @@
 > deliberately scoped-down slice of [`./design-doc.md`](./design-doc.md) — enough to *prove* the five hard
 > parts on one real query, not to ship the platform. Read this first, then [`01-EXECUTION-PLAN.md`](./01-EXECUTION-PLAN.md)
 > for build order, [`02-DEFINITION-OF-DONE.md`](./02-DEFINITION-OF-DONE.md) for the submission gate and scope
-> tiers, then `phases/phase-*.md` for the agent-buildable specs.
+> tiers, [`03-BUILD-PROCESS.md`](./03-BUILD-PROCESS.md) for the command-by-command build loop, then
+> `phases/phase-*.md` for the agent-buildable specs.
 >
 > **Stack (locked):** Python 3.11 · FastAPI · sqlglot · DuckDB · Redis · Postgres · Fernet · Playwright · k6 · OpenTelemetry + Prometheus. All via `docker-compose`.
 > **Scenario (locked):** one canonical cross-app query — open GitHub PRs joined to their in-progress Jira issues, entitled to the caller.
