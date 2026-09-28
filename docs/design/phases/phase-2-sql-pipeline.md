@@ -5,6 +5,39 @@
 > shrinks bob's rows (and the forbidden rows are never fetched); CLS masks `reporter_email`; timeout → partial;
 > empty ≠ partial ≠ error. This phase depends on Phase 1 adapters and Phase 0 contracts.
 
+> **Corrections applied 2026-09-28, before the Phase 2 spec was written.** Eight things below were
+> written before Phases 0 and 1 existed, or before the runtime behaviour was measured, and were wrong
+> against what was actually built. Fixed here rather than forked into the spec, per
+> `03-BUILD-PROCESS.md` step 3. ADRs in [`../../kickoff/v3/architecture.md`](../../kickoff/v3/architecture.md);
+> the measurements in [`../../kickoff/v3/research-repos.md`](../../kickoff/v3/research-repos.md).
+>
+> 1. **The node whitelist runs BEFORE `qualify()`** (ADR-027). Measured: `qualify()` *expands* `SELECT *`
+>    against the schema, so `exp.Star` is gone by the time a post-qualify validator walks the tree and
+>    `SELECT *` would be silently accepted. "Qualify first" stays true of column *attribution*, which is
+>    all stages 3–5 need — it was never a claim about validation order. See §Stage 2.
+> 2. **Malformed SQL has a name: `INVALID_QUERY`, HTTP 400** (ADR-028). The file said "→ 400" twice and
+>    named no code; the six-code vocabulary has none that fits, and design-doc §8.1 is locked. It gets a
+>    separate exception type on the `UnauthenticatedError` precedent — deliberately not a seventh code.
+> 3. **`test_deny_overrides` contradicted this file's own prose** (ADR-031). It said a `deny` policy
+>    yields *empty*; §Stage 3 and `test_entitlement_denied` say an explicit deny is **403**. The prose
+>    wins — it matches the HLD §9 rail. The two tests are now split by level, not by outcome.
+> 4. **Arrow tables are built from an explicit capability-derived schema** (ADR-030). Measured:
+>    `pa.Table.from_pylist([])` infers zero columns and `duckdb.register()` then raises
+>    `InvalidInputException`. Every zero-row path — denied resource, empty RLS match, timed-out source in
+>    a partial — would have crashed the engine. See §FederationEngine.
+> 5. **The per-request deadline must actually be enforced** (ADR-032). Phase 0 set
+>    `request.state.deadline_ms` and nothing read it. `test_timeout_partial` as written drives only the
+>    `fail_next` hook, so "timeouts → partial" would be proven by an exception we raise ourselves while a
+>    genuinely slow source hung the request. See §FederationEngine.
+> 6. **`audit_logs.query_text` stores normalized SQL** (ADR-033). Writing the raw text would put
+>    `WHERE reporter_email = 'dana@acme.com'` into the audit table in plaintext — exactly the value the
+>    CLS rule exists to keep from the caller. The logging layer must not defeat the masking layer.
+> 7. **Two Jira rows need a tied `updated` value** (ADR-035). This file requires `test_pagination` to fail
+>    if the `key` tiebreaker is missing, but `mock_data.py` has twenty distinct timestamps and no ties —
+>    so the test would pass identically with the tiebreaker deleted. `SUP-13` and `SUP-14` are tied.
+> 8. **`CONNECTOR_AUTH_ERROR` is 403, and Phase 1 raises 502** (ADR-029). This file was right; the built
+>    code drifted from a locked HLD §9 rail. `src/governance/secrets.py` is corrected in this phase.
+
 ## Pipeline order (`src/pipeline/runner.py` — `QueryPipelineRunner`)
 ```
 QueryRequest + UserContext
@@ -25,14 +58,31 @@ QueryRequest + UserContext
 
 ## Stage 2 — SQLParser (`src/sqlparse/parser.py`, sqlglot)
 Concrete sqlglot usage (APIs runtime-verified — see `../research/prototype-prior-art.md` Card 1):
-- **Parse:** `sqlglot.parse_one(sql, read="duckdb", into=exp.Select)` (catch `ParseError` → `400`).
-- **Qualify FIRST (mandatory):** `tree = sqlglot.optimizer.qualify.qualify(tree, schema=<connector schemas>, dialect="duckdb")`. This stamps every `exp.Column` with its owning table/alias — *without it you cannot attribute a predicate to a source*, so every later stage depends on it. It also expands `*` and normalizes identifiers; pass the connector column schemas so `validate_qualify_columns` doubles as free validation.
-- **Subset validator = AST node-type whitelist:** walk the tree and reject any node outside {`Select, From, Join, Where, Order, Limit, Column, Table, Literal, EQ/NEQ/GT/…, And/Or, Alias`}. This catches `exp.Star` (reject `SELECT *`), `exp.Insert/Update/Delete/Create/Drop` (writes/DDL), arbitrary `exp.Func`, and subqueries — cleaner than string matching. Violation → top-level `400` (distinct from empty).
-  **Ordering matters and must be commented in the code:** the whitelist runs on the *user's* AST, before stage 3
-  injects `MD5(...)`. The entitlement engine's own nodes are trusted and never re-validated. Without that note a
-  reviewer reads the CLS `MD5` injection as violating this rule's own ban on arbitrary functions.
+**Order: parse → reject → qualify** (CORRECTION 1, ADR-027). The whitelist must see the *raw* AST.
+
+- **Parse:** `sqlglot.parse_one(sql, read="duckdb", into=exp.Select)`. The `into=` form raises
+  `ParseError` on `INSERT`/`UPDATE`/`DELETE`/`DROP` before any walk (probe-confirmed), so DDL and DML
+  are rejected for free. `ParseError` → `InvalidQueryError` (**400 `INVALID_QUERY`**, CORRECTION 2).
+- **Qualify SECOND, and mandatory:** `tree = sqlglot.optimizer.qualify.qualify(tree, schema=<connector schemas>, dialect="duckdb")`. This stamps every `exp.Column` with its owning table/alias — *without it you cannot attribute a predicate to a source*, so every later stage depends on it. It also expands `*` and normalizes identifiers; pass the connector column schemas so `validate_qualify_columns` doubles as free validation.
+- **Subset validator = AST node-type whitelist, run on the RAW tree before `qualify()`:** walk and reject any node outside {`Select, From, Join, Where, Order, Limit, Column, Table, Literal, EQ/NEQ/GT/…, And/Or, Alias`}. This catches `exp.Star` (reject `SELECT *`), `exp.Insert/Update/Delete/Create/Drop` (writes/DDL), arbitrary `exp.Func`, and subqueries — cleaner than string matching. Violation → top-level `400` (distinct from empty).
+  **Two ordering facts, both of which must be commented in the code:**
+  1. The whitelist runs **before `qualify()`**. Measured: `qualify()` expands `SELECT *` against the schema,
+     so a post-qualify walk finds no `exp.Star` and accepts the one projection that defeats projection
+     pushdown. (ADR-027.)
+  2. The whitelist runs on the *user's* AST, before stage 3 injects `MD5(...)`. The entitlement engine's own
+     nodes are trusted and never re-validated. Without that note a reviewer reads the CLS `MD5` injection as
+     violating this rule's own ban on arbitrary functions.
+
+  **Build the whitelist from the measured node set, not from the sketch above** — the canonical query, once
+  qualified, contains `Identifier`, `TableAlias` and `Ordered`, which the sketch omits; a whitelist missing
+  them rejects the canonical query itself. The constructs that must stay out, each with the node it emits:
+  `IN (SELECT …)` → `In`/`Subquery`; `COUNT(x)` → `Count`; `UNION` → `Union`; `LIKE` → `Like`;
+  `GROUP BY` → `Group`; `SELECT *` → `Star`.
 - **Extract:** `tables` via `find_all(exp.Table)` mapped on **`(table.db, table.name)`** — note `github.pull_requests` parses as `.db='github'`, `.name='pull_requests'`, `.catalog=''` (map on db+name, NOT catalog); keep `.alias` for column attribution. `projection` from `tree.selects`; `predicates` by flattening `tree.find(exp.Where)`; `join_keys` from `exp.Join.args["on"]`; `order_by`/`limit` from `tree.args["order"]/["limit"]`.
-- Coarse gate here too: every referenced connector must be enabled for the tenant (`tenant_connector`), else `CONNECTOR_NOT_ENABLED`.
+- Coarse gate here too: every referenced connector must be enabled for the tenant (`tenant_connector`), else
+  `CONNECTOR_NOT_ENABLED` (403). **This gate is load-bearing, not belt-and-braces:** measured, `qualify()`
+  raises on an unknown *column* but silently accepts an unknown *table* — `SELECT s.a FROM slack.msgs s`
+  passes the optimizer untouched. Nothing else stands between that query and the planner.
 
 ```python
 @dataclass
@@ -99,8 +149,21 @@ which violates LAW 1 (the pre-commit hook blocks it) and LAW 3. Split it:
   nothing about DuckDB.*
 
 ### FederationEngine (`src/execution/federation.py`, DuckDB)
-- Call each adapter's `fetch(...)` (Phase 1) **in parallel** with the pushed predicates + `columns_to_fetch`; collect `AdapterResponse`s.
-- **Register + execute (concrete, validated by universql — Card 3):** open an in-memory DuckDB per request (`duckdb.connect(":memory:")`); convert each source's rows to a `pyarrow.Table` and `con.register("github_pull_requests", tbl)` / `con.register("jira_issues", tbl)`; run the residual query (join on `issue_key`, re-apply *every* residual filter authoritatively, `ORDER BY issue.updated DESC, issue.key ASC`, `LIMIT 50`, project entitled columns) over the registered names; `to_arrow_table()` back (**spike correction:** on duckdb 1.5.x `.arrow()` returns a `RecordBatchReader`, not a `Table`, and `fetch_arrow_table()` is deprecated). `pyarrow.Table` is the internal currency (cheap to register and to serialize); `:memory:` + idempotent re-registration means no teardown.
+- Call each adapter's `fetch(...)` (Phase 1) **in parallel** with the pushed predicates + `columns_to_fetch`;
+  collect `AdapterResponse`s.
+- **Enforce the deadline here** (CORRECTION 5, ADR-032). Phase 0 set `request.state.deadline_ms` in
+  `routes.py` and nothing ever read it. Each fetch is wrapped in `asyncio.wait_for(..., timeout=budget)`
+  inside `asyncio.gather(..., return_exceptions=True)`, where the per-source budget descends from
+  `REQUEST_TIMEOUT_MS` — which is what makes the `routes.py` docstring's "parent of the per-source budgets"
+  claim true rather than aspirational. `return_exceptions=True` is load-bearing: the default cancels the
+  sibling fetch the moment one fails, so a Jira timeout would throw away GitHub rows we already held and
+  turn a `partial` answer into an `error` one — the trichotomy collapsing. A `TimeoutError` becomes
+  `SourceOutcome(state="timeout")` + `partial=True`, never a 500.
+- **Register + execute (concrete, validated by universql — Card 3):** open an in-memory DuckDB per request (`duckdb.connect(":memory:")`); convert each source's rows to a `pyarrow.Table` **built with an explicit `pa.schema(...)` derived from
+  `columns_to_fetch`, never inferred from the rows** (CORRECTION 4, ADR-030) — measured,
+  `pa.Table.from_pylist([])` infers zero columns and `con.register()` then raises
+  `InvalidInputException: must have at least one column`, so every zero-row path (denied resource, empty RLS
+  match, a timed-out source in a partial) would crash the engine; then `con.register("github_pull_requests", tbl)` / `con.register("jira_issues", tbl)`; run the residual query (join on `issue_key`, re-apply *every* residual filter authoritatively, `ORDER BY issue.updated DESC, issue.key ASC`, `LIMIT 50`, project entitled columns) over the registered names; `to_arrow_table()` back (**spike correction:** on duckdb 1.5.x `.arrow()` returns a `RecordBatchReader`, not a `Table`, and `fetch_arrow_table()` is deprecated). `pyarrow.Table` is the internal currency (cheap to register and to serialize); `:memory:` + idempotent re-registration means no teardown.
 - **Masks are *not* re-applied here.** The CLS rewrite already happened in stage 3, in the projection AST, and is
   expressed exactly once — this stage merely *executes* that AST, so `MD5(reporter_email) AS reporter_email` runs
   as part of the final `SELECT`. That final SELECT is by definition post-join, which is what satisfies the
@@ -114,7 +177,13 @@ which violates LAW 1 (the pre-commit hook blocks it) and LAW 3. Split it:
   rows get skipped or duplicated and `test_pagination` flakes. **`next_cursor` is always `null` when
   `partial=true`** — an offset into an incomplete result set is not stable, so we refuse to page it. `LIMIT` is applied after the join (never pushed through it). Distinct from connector-level pagination, which lives in the adapters (Phase 1).
 - **join_status / partial:** if a joined side's adapter returned a timeout → `partial=True`, `join_status="incomplete"`, warning `{code:SOURCE_TIMEOUT, connector}`; return the driving side's rows, **never** the un-joined set passed off as joined. A non-join multi-source scan with one side missing → `partial=True`, `join_status="n/a"`.
-- Assemble `QueryEnvelope`; **`AuditLogger` (`src/governance/audit.py`, built here)** writes one `audit_logs` row `{tenant, user, sources_accessed, rows_returned, trace_id, execution_ms}` — the compliance access-trail (design-doc §3.4).
+- Assemble `QueryEnvelope`; **`AuditLogger` (`src/governance/audit.py`, built here)** writes one `audit_logs` row
+  `{tenant, user, query_text, sources_accessed, rows_returned, trace_id, execution_ms}` — the compliance
+  access-trail (design-doc §3.4). **`query_text` is the NORMALIZED SQL, literals replaced by `?`**
+  (CORRECTION 6, ADR-033), produced from the AST we already hold rather than by a regex over the string.
+  Writing the raw text would put `WHERE issue.reporter_email = 'dana@acme.com'` into the audit table in
+  plaintext — the exact value the CLS rule exists to keep from the caller. The logging layer must not
+  defeat the masking layer.
 
 ## The three outcomes (must stay distinct — HLD §5)
 | Outcome | Trigger | Envelope |
@@ -127,7 +196,10 @@ which violates LAW 1 (the pre-commit hook blocks it) and LAW 3. Split it:
 - `test_rls_ast`: RLS policy → `assignee = <alice>` AND-ed into the Jira predicate set; the Jira mock is asserted to receive `assignee=<alice>` (forbidden rows never requested).
 - `test_cls_mask`: `reporter_email` is `hash`-masked in output; `ColumnMeta.masked=True`; the raw email never appears in `rows`.
 - `test_projection_union_guard`: a query ordering by a non-projected column → that column is added to `columns_to_fetch` for the source.
-- `test_deny_overrides`: a `deny` policy on a resource → empty for that resource even if an allow also matches.
+- `test_deny_overrides` *(unit, `EntitlementEngine`)*: a `deny` **and** a matching `allow` on the same
+  resource → the resource lands in `denied_resources`; the allow does not win. Deny-overrides, asserted at
+  the engine. (CORRECTION 3 — this previously said "→ empty", contradicting §Stage 3 and
+  `test_entitlement_denied` below. The prose there matches the HLD §9 rail and wins.)
 - `test_canonical_alice`: end-to-end canonical query as alice → the known non-empty joined rows; `freshness_ms` = the stalest side; `join_status="complete"`.
 - `test_rls_shrinks_bob`: same query as bob → **exactly 1 row where alice got 3** (a count that shrinks but stays
   non-zero is the legible RLS proof; a count that collapses to zero is indistinguishable from a broken query);
@@ -138,18 +210,32 @@ which violates LAW 1 (the pre-commit hook blocks it) and LAW 3. Split it:
   time out), **error** (malformed SQL → HTTP 400, no envelope rows).
 - `test_staleness_knob`: the same query twice — `max_staleness_ms=0` then `60000`. First returns
   `sources[].served == "live"` with `stats.connector_ms` populated; second returns `served == "cache"` with no
-  connector time and **no token spent** (assert `rate_limit_status.remaining` is unchanged). *Why this exists at
+  connector time and **no token spent**. Assert `rate_limit_status[c].remaining` is **not decremented**
+  (`>=` the first reading), not that it is byte-equal: the bucket refills against wall-clock time, so two
+  requests straddling a refill interval legitimately differ. "Not decremented" is the observable form of
+  "no token spent"; "unchanged" would be a time-dependent flake. *Why this exists at
   Phase 2:* freshness is 15% of the rubric, and its only other proof was the Phase-3 Playwright spec — which is
   SHOULD-tier and disappears if the UI is cut. This keeps the freshness claim backed by a MUST-tier test.
 - `test_connector_gates`: a query naming a connector the tenant has not been granted → `403 CONNECTOR_NOT_ENABLED`;
-  a granted connector whose seeded secret fails to decrypt → `403 CONNECTOR_AUTH_ERROR`. These are the two gateway
-  codes in the six-code vocabulary and were the only ones with no test — a declared code with no test is a claim,
-  not a feature.
+  a granted connector whose seeded secret fails to decrypt → `403 CONNECTOR_AUTH_ERROR`. These are the two
+  gateway codes in the six-code vocabulary and were the only ones with no test — a declared code with no test
+  is a claim, not a feature. **Phase 1 raises 502 for this code** and must be corrected to 403 here
+  (CORRECTION 8, ADR-029): HLD §4, design-doc §8.1 and this file all say 403, and HLD §9 makes the error
+  vocabulary a provenance rail that must be identical across all three.
 - `test_pagination`: a query with more joined rows than `LIMIT` returns a `next_cursor`; echoing it returns the
-  next, **non-overlapping** window; the final window returns `next_cursor: null`. Seed at least two rows sharing
-  the same `updated` value, so the run fails if the `key` tiebreaker is missing.
-- `test_entitlement_denied`: a seeded `effect='deny'` policy on a referenced resource → `403 ENTITLEMENT_DENIED`
-  (**not** an empty 200) — this is what keeps the code reachable and distinguishes explicit deny from default-deny.
+  next, **non-overlapping** window; the final window returns `next_cursor: null`. Needs at least two rows
+  sharing the same `updated` value, so the run fails if the `key` tiebreaker is missing — **Phase 1's
+  `mock_data.py` has twenty distinct timestamps and no ties**, so this phase gives `SUP-13` and `SUP-14`
+  (two of alice's three In-Progress issues) the same `updated` value (CORRECTION 7, ADR-035). Changing a
+  timestamp changes no row's membership in any persona's result, so alice 3 / bob 1 / carol 0 is preserved;
+  it only makes the ordering non-total *within* alice's page, which is the exact condition the tiebreaker
+  exists for.
+- `test_entitlement_denied` *(route, end-to-end)*: a seeded `effect='deny'` policy on a referenced resource →
+  `403 ENTITLEMENT_DENIED` (**not** an empty 200) — this is what keeps the code reachable and distinguishes
+  explicit deny from default-deny. Paired with `test_deny_overrides` above: that one asserts the engine
+  *decides* deny, this one asserts the decision *renders* as 403.
+- `test_default_deny_is_empty`: a role with **no** matching allow → `rows: []`, HTTP **200**, `partial:false`.
+  The other half of the split, and the one that keeps "empty" meaning *"ran fine, nothing matched"*.
 - `test_cursor_null_when_partial`: force a timeout on a query whose result would otherwise page →
   `partial=true` and `next_cursor is None`.
 
