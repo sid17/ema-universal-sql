@@ -13,11 +13,16 @@ make load-seed   # 20 synthetic load tenants
 ## Running it
 
 ```bash
-make load-mt                                       # S3 — realistic mix, ~95% cache hit
-make load-mt MISS_RATE=0                           # S2 — 100% hit, the engine alone
-make load-mt MISS_RATE=1.0 LOAD_MAX_REQUESTS=84    # S4 — cold cache, GitHub's real quota
-make load-mt RATE=750                              # any other offered rate
+make load-mt MISS_RATE=0 RATE=200                  # 100% hit — the engine alone
+make load-mt RATE=300                              # realistic mix, inside the knee
+make load-mt RATE=400                              # realistic mix, the last clean rate
+make load-mt RATE=500                              # realistic mix, past the knee
+make load-mt MISS_RATE=1.0 LOAD_MAX_REQUESTS=84 RATE=200   # cold cache, GitHub's real quota
 ```
+
+All five default to `DURATION=60s`, which is what the committed results were measured at. A shorter
+run reports a flatteringly low latency because it barely clears warm-up — the same scenario at 15s
+gives a p50 four times better than the 60s one.
 
 `make load-mt` rebuilds the image, disables span export (it distorts what is being measured), seeds
 the tenants, flushes the cache so every run starts from a known state, runs k6 in its own container,
@@ -26,11 +31,14 @@ measuring anything. The k6 script has no remote imports, so it works offline.
 
 ## The scenarios
 
-| | What it is | Isolates |
+| Rate | What it is | Isolates |
 |---|---|---|
-| **S2** | 2-source join, 100% cache hit | the engine, with the connectors removed |
-| **S3** | 2-source join, ~95% hit, 20 tenants | production shape |
-| **S4** | 2-source join, 0% hit, real quota | the connector and the rate limiter |
+| 200, 100% hit | 2-source join, every request cached | the engine, with the connectors removed |
+| 300 / 400 / 500 | 2-source join, ~95% hit, 20 tenants | production shape, and where the knee falls |
+| 200, 0% hit | 2-source join, GitHub's real quota | the connector and the rate limiter |
+
+The three middle rates exist to locate the knee rather than to describe one operating point: 400
+serves everything offered, 500 does not, so the limit is somewhere in that band.
 
 `LOAD_MAX_REQUESTS=84` is what makes S4 mean anything. Load tenants are seeded with a deliberately
 generous budget so S2 and S3 measure the *engine* rather than the token bucket; `84` is GitHub's real

@@ -29,7 +29,7 @@ LIMIT 50;
 | Entitlements: token → scopes/roles → RLS/CLS | four gates — identity, tenant status, OAuth scope, then RLS/CLS **compiled into the query plan** |
 | Rate limits: token bucket with burst, friendly error, async reroute | per `(tenant, connector)` bucket in Redis; `429` carries `Retry-After` and points at `/v1/query/async` |
 | Freshness: `max_staleness` knob, cache hit vs live | per-query knob; every response reports `sources[].served` as `live` or `cache` |
-| Load test at ~500 QPS for 60s | k6, 20 tenants, 8 workers — see [load results](docs/LOAD-RESULTS.md) |
+| Load test at ~500 QPS for 60s | k6, 20 tenants, 8 workers — holds **400 req/s** inside SLO; see [load results](docs/LOAD-RESULTS.md) |
 | Observability: a Prometheus metric and a trace showing connector time | `/metrics` plus a per-source span waterfall |
 
 **Supported SQL:** projection, `WHERE` (`= != < > <= >=`, `AND`, `OR`), `JOIN`, `ORDER BY`, `LIMIT`,
@@ -138,9 +138,23 @@ one warm query against the code that is checked out.
 
 ## The load test
 
-k6 against 20 tenants, 8 workers, on one laptop. **A warm two-source entitled join costs 24.8ms
-p50** — 20× inside the brief's 500ms budget — and tenant isolation held across >180,000 requests with
-zero foreign rows. Offered 500 QPS the system saturates at ~400 req/s; the ceiling is not CPU.
+k6 against 20 tenants, 8 workers, on one laptop, 60s per run.
+
+**It holds 400 req/s cleanly** — everything offered served, nothing dropped, no failed checks, p50
+195ms against a 500ms budget and p95 553ms against 1.5s. Tenant isolation held in every run with
+**zero foreign rows**, and the measured cache hit ratio came out at 95.1% against an intended 95%.
+
+| Offered | Achieved | p50 | p95 | Dropped |
+|---|---|---|---|---|
+| 200 | 200.0 | 94.2ms | 472.9ms | 0 |
+| 300 | 300.0 | 141.9ms | 523.6ms | 0 |
+| **400** | **400.0** | **195.1ms** | **552.9ms** | **0** |
+| 500 | 414.9 | 4,289ms | 5,818ms | 5,110 |
+
+**It is a cliff, not a curve.** 400 serves everything; 500 drops 5,110 iterations and p50 jumps 22×.
+That shape — plus app CPU peaking at 220% of 1200% available — says the limit is a fixed concurrency
+bound, not a resource running out. Under saturation 340 responses came back `partial` with the
+affected source named: the system sheds work and says so rather than returning wrong answers.
 
 Method: **[docs/LOAD-TESTING.md](docs/LOAD-TESTING.md)** · Numbers, the diagnosis and what we would
 do next: **[docs/LOAD-RESULTS.md](docs/LOAD-RESULTS.md)**

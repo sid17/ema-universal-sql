@@ -1,0 +1,35 @@
+=========================================================================
+ S3 - realistic multi-tenant load
+=========================================================================
+
+ Assumptions
+   workers                 8
+   tenants                 20
+   cache keys per source   20 (Zipf s=1.0)
+   intended miss rate      5.00%  (via max_staleness_ms=0)
+   offered rate            300 req/s for 60s
+
+ Throughput
+   offered                 300 req/s
+   achieved                300.0 req/s
+   dropped iterations      0
+   total requests          18001 in 80.4s
+
+ Latency (steady state only, warm-up excluded)
+   p50                     141.9ms    SLO < 500ms
+   p90                     415.8ms
+   p95                     523.6ms    SLO < 1500ms
+   p99                     776.0ms
+   max                     1348.5ms
+
+ Measured behaviour
+   cache hit ratio         95.06%  (intended 95.00%)
+   rows per result         50.0 avg
+   429 throttled           0
+   partial results         0
+   TENANT LEAKS            0  (no foreign rows in any response)
+
+ Checks
+   passed                  54403
+   failed                  0
+

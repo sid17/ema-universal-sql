@@ -5,7 +5,7 @@ Every file here is **generated**, never hand-edited. Regenerate with `make artif
 
 | Folder | Target | Contents |
 |---|---|---|
-| `load/` | `make load-mt` | k6 summaries — throughput, latency, measured cache hit ratio, tenant-leak count |
+| `load/` | `make load-mt` | one k6 summary per offered rate (`k6-S2`, `k6-K300`, `k6-K400`, `k6-S3`, `k6-S4`) — throughput, latency, measured cache hit ratio, tenant-leak count |
 | `trace/` | `make trace` | one request's stage waterfall (`.txt`, `.svg`, `.png`) |
 | `metrics/` | `make scrape` | `GET /metrics` with real samples |
 | `demo/` | `make demo` | `demo-output.txt` — the scripted walkthrough, teed verbatim. **The 60-second read:** four calls, four hard parts, a narrative. |
