@@ -130,7 +130,7 @@ constrained only by D6 and the bucket drain (§3 last among mutating sections).
 
 ## Milestone A — the runner
 
-- [ ] **T700 — `scene` helper, banner, token minting, coverage tally**
+- [x] **T700 — `scene` helper, banner, token minting, coverage tally**
   Port `token()`, `query()` and `banner()` from `scripts/demo.sh` rather than rewriting them —
   LAW 2. Extend `token()` to take `role`, `tenant` and `scopes` (all four are already `MockTokenRequest`
   fields; `demo.sh` hardcodes `role=support`, `tenant=tenant_acme`).
@@ -139,7 +139,7 @@ constrained only by D6 and the bucket drain (§3 last among mutating sections).
   **Files:** `scripts/demo_detail.sh`
   **Verify:** one smoke scene (1.1) renders a banner + envelope; `bash -n scripts/demo_detail.sh`.
 
-- [ ] **T701 — the header block**
+- [x] **T701 — the header block**
   Artifact provenance (generated-by, `$BASE`, seed assumption, `TEST_MODE`), the section index, and
   **the D5 note** on `sql` vs plan JSON.
   **Files:** `scripts/demo_detail.sh`
@@ -147,7 +147,7 @@ constrained only by D6 and the bucket drain (§3 last among mutating sections).
 
 ## Milestone B — interfaces and entitlements
 
-- [ ] **T702 — §1, the envelope contract**
+- [x] **T702 — §1, the envelope contract**
   `1.1` single-source GitHub query, **no join** — the simplest full envelope, `join_status: "n/a"`.
   `1.2` the canonical two-source join — `join_status: "complete"`.
   `1.3` pagination: `LIMIT 2` → page 1 → `next_cursor` → page 2 → last page with `next_cursor: null`.
@@ -159,7 +159,7 @@ constrained only by D6 and the bucket drain (§3 last among mutating sections).
   **Verify:** 1.1's envelope carries `rows`, `columns`, `freshness_ms`, `rate_limit_status`,
   `trace_id`; 1.3's last page has `next_cursor: null`.
 
-- [ ] **T703 — §2, token → scopes/roles → RLS/CLS**
+- [x] **T703 — §2, token → scopes/roles → RLS/CLS**
   Eight scenes, in gate order (`deps.py:98` L2 → L3 → L4):
 
   | id | Input | Expected |
@@ -183,7 +183,7 @@ constrained only by D6 and the bucket drain (§3 last among mutating sections).
 
 ## Milestone C — limits, freshness, errors
 
-- [ ] **T704 — §3, rate limits (runs last among mutating sections)**
+- [x] **T704 — §3, rate limits (runs last among mutating sections)**
   `3.1` `rate_limit_status` across successive live calls, ticking down from capacity 7.
   `3.2` the call that exhausts it → **429**, `Retry-After`, `suggested_action`.
   `3.3` `POST /v1/query/async` → **501** with its documented message.
@@ -194,7 +194,7 @@ constrained only by D6 and the bucket drain (§3 last among mutating sections).
   **Verify:** 3.2 is reached in ≤ 8 calls (`config/rate_limits.yaml:19-23`) and carries a
   `Retry-After` header.
 
-- [ ] **T705 — §4, freshness**
+- [x] **T705 — §4, freshness**
   `4.1` `max_staleness_ms=0` → `served: live`, `stats.connector_ms` populated.
   `4.2` same query, `=60000` → `served: cache`, **`rate_limit_status` unchanged from 4.1**.
   `4.3` a `max_staleness_ms` smaller than the entry's age → **200 plus a `STALE_DATA` warning**.
@@ -206,7 +206,7 @@ constrained only by D6 and the bucket drain (§3 last among mutating sections).
   **Verify:** the three scenes run without an intervening reset, and 4.2's `rate_limit_status`
   is byte-equal to 4.1's.
 
-- [ ] **T706 — §5, the six error codes as a table**
+- [x] **T706 — §5, the six error codes as a table**
   One scene per `ErrorCode` (`src/models/errors.py:26-34`): four armed via `/v1/test/fail-next`
   (`timeout`, `throttled`, `auth`, `not_enabled` — `FailureMode` at `src/connectors/errors.py:61`),
   `ENTITLEMENT_DENIED` by re-pointing at 2.5, `STALE_DATA` by re-pointing at 4.3. Section closes
@@ -219,7 +219,7 @@ constrained only by D6 and the bucket drain (§3 last among mutating sections).
 
 ## Milestone D — subset and observability
 
-- [ ] **T707 — §6, the SQL subset boundary**
+- [x] **T707 — §6, the SQL subset boundary**
   Five rejections, each printing the caller-actionable message from `src/sqlparse/whitelist.py`:
   `SELECT *`, `GROUP BY`, a subquery, `LIKE`, `IN`.
   **Decision:** included because the messages are *designed* — "SELECT * is not supported — name the
@@ -228,7 +228,7 @@ constrained only by D6 and the bucket drain (§3 last among mutating sections).
   **Files:** `scripts/demo_detail.sh`
   **Verify:** each returns 400 and a message naming the construct.
 
-- [ ] **T708 — §7 observability, §8 load pointer**
+- [x] **T708 — §7 observability, §8 load pointer**
   §7: `curl /metrics` filtered to the connector-time metric, plus a `trace_id` lifted from §1.2 with
   a pointer to `docs/artifacts/trace/`. §8: the k6 headline numbers quoted from
   `docs/artifacts/load/k6-summary.txt` with a pointer to the file and the command that regenerates it (D3).
@@ -237,7 +237,7 @@ constrained only by D6 and the bucket drain (§3 last among mutating sections).
 
 ## Milestone E — wire it up
 
-- [ ] **T709 — `make demo-detail` and the committed artifact**
+- [x] **T709 — `make demo-detail` and the committed artifact**
   Target modelled on `demo:` (`Makefile:170`), depending on `test-mode`; added to `artifacts:`
   (`Makefile:163`). Tees to `docs/artifacts/demo/demo-detail.txt`.
   **Watch-out:** Phase 6 T616 also edits the `Makefile` (adds `connectors:`). Expect a trivial
@@ -245,7 +245,7 @@ constrained only by D6 and the bucket drain (§3 last among mutating sections).
   **Files:** `Makefile`, `docs/artifacts/demo/demo-detail.txt`
   **Verify:** `make demo-detail` on a fresh `make up && make seed` writes a non-empty artifact.
 
-- [ ] **T710 — document it**
+- [x] **T710 — document it**
   One row in `docs/artifacts/README.md` distinguishing the two demo artifacts by **job**, not by
   size; one line in the root `README.md` artifact list.
   **Files:** `docs/artifacts/README.md`, `README.md`

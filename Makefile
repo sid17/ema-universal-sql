@@ -10,7 +10,7 @@ BASE_URL ?= http://localhost:8000
 HEALTH_URL ?= $(BASE_URL)/healthz
 HEALTH_TIMEOUT ?= 90
 
-.PHONY: up down seed test test-integration test-mode e2e load load-seed load-mt demo trace scrape connectors artifacts fmt
+.PHONY: up down seed test test-integration test-mode e2e load load-seed load-mt demo demo-detail trace scrape connectors artifacts fmt
 
 ## up: build and start the stack, then wait until /healthz actually answers.
 # Polled, not slept: the submission gate times cold-to-serving, so the wait has
@@ -178,7 +178,7 @@ scrape:
 ## artifacts: regenerate every reproducible submission artifact, in order.
 # demo first (it exercises the stack), then trace, then the scrape — which must
 # come last so it captures metrics the other two produced.
-artifacts: demo trace connectors scrape
+artifacts: demo demo-detail trace connectors scrape
 	@find docs/artifacts -type f | sort
 
 ## demo: the scripted walkthrough, teed to docs/artifacts/demo/demo-output.txt.
@@ -187,6 +187,19 @@ artifacts: demo trace connectors scrape
 # submission with no demo at all.
 demo: test-mode
 	./scripts/demo.sh
+
+## demo-detail: the coverage matrix — ~34 scenes answering the brief's detailed
+# requirement list line by line, teed to docs/artifacts/demo/demo-detail.txt.
+#
+# A SECOND artifact, not a replacement. demo.sh is a narrative a reviewer reads
+# in 60 seconds; this one is the checklist they tick. Different readers, so they
+# change for unrelated reasons and neither should grow into the other.
+#
+# Needs TEST_MODE for the /v1/test/* hooks, same as `demo`. §3 drains
+# tenant_acme's GitHub bucket deliberately; every section resets first, so the
+# run reproduces from any starting state and leaves one behind for `make trace`.
+demo-detail: test-mode
+	./scripts/demo_detail.sh
 
 ## fmt: format the tree.
 fmt:
