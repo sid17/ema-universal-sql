@@ -20,7 +20,7 @@ services:
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       REQUEST_TIMEOUT_MS: ${REQUEST_TIMEOUT_MS:-5000}
       CONTROL_PLANE_TTL_MS: ${CONTROL_PLANE_TTL_MS:-30000}
-      CACHE_TTL_MS: ${CACHE_TTL_MS:-60000}
+      CACHE_TTL_MS: ${CACHE_TTL_MS:-300000}
       TEST_MODE: ${TEST_MODE:-0}
       DEFAULT_SCOPES: ${DEFAULT_SCOPES:-query:execute}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
@@ -57,9 +57,15 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: universal_sql
-    # No published host port: a developer machine very often already has
-    # something on 5432, and `app` reaches Postgres over the compose network.
-    # Use `docker compose exec postgres psql -U postgres -d universal_sql`.
+    # Published on 55432, NOT 5432. Phase 0 published no port at all, on the
+    # grounds that a developer machine very often already has something on
+    # 5432 — which an unusual port avoids while still letting host-side
+    # integration tests assert what is actually IN the control plane. `app`
+    # still reaches Postgres over the compose network on 5432; this mapping
+    # exists for `make test-integration` and for
+    # `psql -h localhost -p 55432 -U postgres universal_sql`.
+    ports:
+      - "55432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:

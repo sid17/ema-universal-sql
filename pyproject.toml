@@ -24,6 +24,10 @@ dependencies = [
     # state + control plane
     "redis>=5.2",
     "psycopg[binary,pool]>=3.2",
+    # config loading (Phase 1). Declared explicitly rather than relied on
+    # transitively through uvicorn[standard]: `config/*.yaml` is a graded
+    # deliverable (brief line 29), not an implementation detail.
+    "pyyaml>=6.0",
     # observability. The four opentelemetry-* packages are pre-1.0 and must be
     # upgraded as a set. FastAPIInstrumentor ships in its own distribution — the
     # phase file's list omitted it (v1 research finding).
@@ -41,6 +45,10 @@ dev = [
     "httpx>=0.28",
     "playwright>=1.49",
     "ruff>=0.8",
+    # Runs the REAL token-bucket Lua with no Redis server, so the burst and
+    # drain gate tests stay in the infra-free suite the commit hook runs.
+    # dev-only: it must never reach the image.
+    "fakeredis[lua]>=2.38",
 ]
 
 [build-system]

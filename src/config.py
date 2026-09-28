@@ -24,7 +24,11 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://redis:6379/0"
     REQUEST_TIMEOUT_MS: int = 5000
     CONTROL_PLANE_TTL_MS: int = 30000
-    CACHE_TTL_MS: int = 60000
+    # 300s, comfortably longer than any max_staleness_ms the demo uses.
+    # TTL is a property of the WRITE, staleness a property of the READ
+    # (ADR-023): at 60s this and the demo's staleness knob were the same
+    # number, so a cache hit depended on which boundary fell first.
+    CACHE_TTL_MS: int = 300000
     TEST_MODE: bool = False
 
     # Scopes minted into a demo token (RFC 8693 §4.2: space-delimited).

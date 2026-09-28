@@ -40,7 +40,7 @@ def test_defaults_apply_when_env_is_empty(clean_env):
     assert settings.JWT_AUDIENCE == "ema-universal-sql"
     assert settings.REQUEST_TIMEOUT_MS == 5000
     assert settings.CONTROL_PLANE_TTL_MS == 30000
-    assert settings.CACHE_TTL_MS == 60000
+    assert settings.CACHE_TTL_MS == 300000
     assert settings.TEST_MODE is False
     assert settings.DATABASE_URL
     assert settings.REDIS_URL
