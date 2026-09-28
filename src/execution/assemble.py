@@ -38,6 +38,7 @@ from src.governance.clock import NowMs, wall_clock_ms
 from src.governance.ratelimit import RateLimitPolicy, TokenBucketRateLimiter
 from src.models.envelope import ColumnMeta, ConnectorBudget, QueryEnvelope, SourceOutcome
 from src.models.errors import ErrorCode, InvalidQueryError
+from src.observability.metrics import set_rate_limit_remaining
 from src.planner.planner import QueryPlan
 
 logger = logging.getLogger(__name__)
@@ -294,6 +295,12 @@ class ResultAssembler:
             remaining = await self._limiter.remaining(
                 tenant_id, fetch.connector_type, RateLimitPolicy.from_row(row)
             )
+            # The gauge and the envelope get the SAME value from the SAME read
+            # (ADR-043). Published here rather than inside the limiter because
+            # the limiter deliberately takes no tenant-scoped reporting duty
+            # (ADR-020) and is skipped entirely on a cache hit — which would
+            # leave `/metrics` asserting a budget that had since moved.
+            set_rate_limit_remaining(tenant_id, fetch.connector_type, remaining)
             budgets[fetch.connector_type] = ConnectorBudget(
                 remaining=remaining,
                 throttled=fetch.state == "throttled" or remaining <= 0,

@@ -16,6 +16,7 @@ from cryptography.fernet import Fernet
 from src.connectors.base import CapabilityModel
 from src.connectors.github import GitHubConnectorAdapter
 from src.connectors.jira import JiraConnectorAdapter
+from src.execution.assemble import ResultAssembler
 from src.governance.cache import FreshnessCacheManager
 from src.governance.clock import FakeClock
 from src.governance.ratelimit import TokenBucketRateLimiter
@@ -385,3 +386,13 @@ def adapters(github, jira) -> dict:
     token.
     """
     return {"github": github, "jira": jira}
+
+
+@pytest.fixture
+def assembler(limiter, control_plane, fake_clock) -> ResultAssembler:
+    """On the SAME injected clock as the cache the rows came from.
+
+    Reading wall-clock time here while `fetched_at` came from `FakeClock` would
+    make every fixture look hours stale and fire spurious STALE_DATA warnings.
+    """
+    return ResultAssembler(limiter, control_plane, fake_clock)
