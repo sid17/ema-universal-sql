@@ -157,10 +157,29 @@ def test_async_query_is_501_not_404(client):
 
 def test_metrics_exposes_both_families(client):
     """ADR-015's load-bearing assumption: golden signals and our own domain
-    gauge share one registry, so one scrape carries both."""
+    gauge share one registry, so one scrape carries both.
+
+    **This asserts DECLARATION, not recording — and says so.** The earlier
+    version of this test read::
+
+        assert "rate_limit_remaining" in body
+
+    which the ``# HELP rate_limit_remaining …`` line satisfies whether or not a
+    single sample was ever recorded. The gauge was in fact fed by nothing for
+    two whole phases and this test passed throughout, against exactly the state
+    it was written to catch.
+
+    A name in a scrape proves only that somebody declared it, so the scope of
+    this test is now explicit and narrow: the two families are registered
+    together. That the gauge carries a **value** is
+    ``tests/integration/test_metrics.py``'s job, because it takes a query to
+    produce one (v5 F5, ADR-043).
+    """
     body = client.get("/metrics").text
 
-    assert "rate_limit_remaining" in body, "the per-connector gauge is missing"
+    assert "# HELP rate_limit_remaining" in body, "our gauge is not registered"
+    assert "# HELP query_duration_seconds" in body, "our query histogram is not registered"
+    assert "# HELP connector_fetch_duration_seconds" in body, "the connector histogram is missing"
     assert "http_request" in body, "the golden-signal collectors are missing"
 
 
