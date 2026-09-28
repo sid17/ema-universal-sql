@@ -14,6 +14,45 @@
 -- NOTE FOR PHASE 1: this file takes the `002_` slot. The execution plan calls
 -- Phase 1's seed `002_seed.sql`; it should become `003_seed.sql`.
 
+-- ---------------------------------------------------------------------------
+-- ABOUT `fernet_key`: WHAT THIS PROVES, AND WHAT IT DOES NOT
+--
+-- This column holds raw key MATERIAL, in the same database as the ciphertext it
+-- decrypts (`secrets.ciphertext`), and the four values below are committed to
+-- this repository. Both facts are deliberate, and both are limitations worth
+-- stating rather than discovering.
+--
+-- Encryption at rest only protects against an attacker who reaches the data
+-- without reaching the key. Here a single `pg_dump` yields BOTH halves, so
+-- against the most likely breach — a leaked backup, a stale snapshot, a stolen
+-- replica — this encryption provides no confidentiality. Treat it as
+-- obfuscation, not as protection.
+--
+-- What it DOES prove, and what it is here for:
+--   * INDIRECTION — `tenant_connector.secret_ref` -> `secrets.ciphertext` ->
+--     decrypt. A credential is never inline, never in a config file, and is
+--     resolved per fetch. That code shape is correct and unchanged in production.
+--   * CRYPTO-SHRED — the key is PER TENANT and lives outside the ciphertext, so
+--     offboarding is one row write that renders that tenant's data permanently
+--     unreadable, while every other tenant is untouched. This property does not
+--     depend on the key being secret, only on it being per-tenant and
+--     destroyable. `test_crypto_shred` asserts it.
+--   * NO CROSS-LOAD — one tenant's `secret_ref` can never be decrypted with
+--     another tenant's key (`test_secret_indirection`).
+--
+-- PRODUCTION (take-home line 99: "Vault + cloud KMS (tenant-scoped); rotation
+-- and break-glass"): this column stores a WRAPPED data-encryption key, not key
+-- material. The key-encryption key lives in KMS or an HSM and never touches the
+-- database, so a dump alone is useless. Envelope encryption keeps everything
+-- above intact — per-tenant keys, crypto-shred, runtime tenant onboarding — and
+-- adds confidentiality. It is a change of custody, not of design.
+--
+-- Note the connector credentials themselves are NOT committed: `scripts/seed.py`
+-- generates them at seed time (ADR-026). These keys are the one remaining piece
+-- of committed key material, and the same reasoning applies to them as to
+-- JWT_SECRET, which `src/main.py` warns about loudly at startup.
+-- ---------------------------------------------------------------------------
+
 -- The three tenants named in the locked rails (HLD §6 and §9).
 INSERT INTO tenants (tenant_id, name, status, residency, deployment_mode, fernet_key) VALUES
   -- The default tenant. Everything in the demo runs here unless stated otherwise.
