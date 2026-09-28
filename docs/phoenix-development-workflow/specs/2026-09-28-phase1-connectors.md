@@ -1,6 +1,6 @@
 # Phase 1 — Connectors + Governance — Design Spec
 
-> **Source of truth.** [`docs/design/phases/phase-1-connectors.md`](../../design/phases/phase-1-connectors.md)
+> **Source of truth.** `docs/design/phases/phase-1-connectors.md`
 > is spec-grade already and **wins on any conflict**. This document adds the four things it does not carry:
 > per-task MUST/SHOULD/COULD tiering from `02-DEFINITION-OF-DONE.md` §3, explicit file paths against the
 > HLD §8 layout, the test list as named files, and which README section this phase fills.

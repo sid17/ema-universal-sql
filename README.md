@@ -15,7 +15,7 @@ LIMIT 50;
 
 > **What this repo is.** Take-home deliverables **3 (the runnable prototype)** and **4 (this
 > README)**. Deliverables 1 and 2 — the design doc with diagrams, and the six-month execution plan —
-> are the **Google Doc**. `docs/design/design-doc.md` is a reference copy kept for traceability.
+> are the **Google Doc**.
 
 ---
 
@@ -185,11 +185,21 @@ tests/integration/   needs `make up`
 **Onboarding a connector is one YAML file plus one adapter class** — and a second *endpoint* on an
 existing connector is a row in `config/connectors/<name>.yaml` with no Python at all.
 
-## Design documents
+## How this was built
 
-`docs/design/` holds a reference copy of the high-level design plus the prototype's own execution
-plan and definition of done. The submitted design document and six-month execution plan are the
-Google Doc; this repository is deliverables 3 and 4.
+The design document and six-month execution plan are the Google Doc. What this repository adds is
+the **record of how the prototype got built**, because it was built with an AI-assisted workflow and
+that process is legible rather than hidden:
+
+| | |
+|---|---|
+| `docs/kickoff/v*/architecture.md` | the architecture decisions, recorded as they were taken — four rounds, one per phase |
+| `docs/kickoff/v*/research-repos.md` | the prior-art and runtime probes each round ran before deciding |
+| `docs/phoenix-development-workflow/specs/` | per-phase design specs — scope tiering, file paths, the test list |
+| `docs/phoenix-development-workflow/plans/` | per-phase task plans, each with its own verification gate |
+
+Every plan carries the decisions it took and the watch-outs it hit, so a reviewer can follow a
+feature from the decision that motivated it, through the spec, to the tasks that built it.
 
 ## Repository access
 

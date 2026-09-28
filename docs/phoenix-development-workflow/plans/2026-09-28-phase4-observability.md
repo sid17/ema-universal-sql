@@ -10,7 +10,7 @@ histograms, a 500 RPS k6 run, and the three README sections still reading *"Pend
 is available via `make test-mode`.
 
 **Spec:** [`specs/2026-09-28-phase4-observability.md`](../specs/2026-09-28-phase4-observability.md)
-**Phase file (wins on conflict):** [`../../design/phases/phase-4-observability.md`](../../design/phases/phase-4-observability.md) — 7 corrections applied
+**Phase file (wins on conflict):** `../../design/phases/phase-4-observability.md` — 7 corrections applied
 **ADRs:** [`../../kickoff/v5/architecture.md`](../../kickoff/v5/architecture.md) — 037–045
 
 **Verify (the Iron Law — run it, read the output, then claim it works):**

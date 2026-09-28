@@ -1,8 +1,8 @@
 # Architecture — Universal SQL prototype (kickoff v1 / Phase 0)
 
 > **What this document is:** the ADR-format record of decisions already made. Per
-> [`../../design/03-BUILD-PROCESS.md`](../../design/03-BUILD-PROCESS.md) step 2, this step's mandate is
-> **"formalize, don't re-decide"** — [`../../design/01-EXECUTION-PLAN.md`](../../design/01-EXECUTION-PLAN.md)
+> `../../design/03-BUILD-PROCESS.md` step 2, this step's mandate is
+> **"formalize, don't re-decide"** — `../../design/01-EXECUTION-PLAN.md`
 > §A (finalized stack, with sources) and §B (deviation log, with reasons) are an ADR set in everything but
 > format. ADR-001 … ADR-014 below are that set, converted. They carry status **Accepted (prior decision)** and
 > are **not open for re-decision by any later step** — a step that believes one is wrong stops and says so.
@@ -11,7 +11,7 @@
 > were confirmed by the human on 2026-09-28. They are now Accepted and closed on the same terms as the rest.
 >
 > Evidence sources: `§D` = `01-EXECUTION-PLAN.md` §D research cards →
-> [`../../design/research/prototype-prior-art.md`](../../design/research/prototype-prior-art.md);
+> `../../design/research/prototype-prior-art.md`;
 > `v1-research` = [`./research-repos.md`](./research-repos.md); `spike` = `spike/ast_spike.py`, runtime-executed
 > this session.
 

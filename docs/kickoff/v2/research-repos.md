@@ -3,7 +3,7 @@
 > **Scope of this pass.** `03-BUILD-PROCESS.md` step 1 caps per-phase research at a 10–20 minute
 > confirmation and forbids it from reopening a locked decision. Phase 1's connector patterns were
 > already settled by **Card 2 (`airbyte-python-cdk`)** in
-> [`research/prototype-prior-art.md`](../../design/research/prototype-prior-art.md) — `RequestOption`,
+> `research/prototype-prior-art.md` — `RequestOption`,
 > pagination as *strategy ⊕ placement*, error mapping as a match→action table. Those are not re-surveyed.
 >
 > **One genuine open question remained:** the shape of the Redis token bucket. The brief names

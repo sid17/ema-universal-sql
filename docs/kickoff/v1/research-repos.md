@@ -1,10 +1,10 @@
 # GitHub Research — v1 / Phase 0 (scaffold + contracts)
 
-> **Scope:** deliberately a 15-minute confirmation pass, per [`../../design/03-BUILD-PROCESS.md`](../../design/03-BUILD-PROCESS.md)
+> **Scope:** deliberately a 15-minute confirmation pass, per `../../design/03-BUILD-PROCESS.md`
 > step 1 — *"research is a 10–20 minute confirmation pass, not a survey"*, and **may not reopen a locked
 > decision**. The four repos that settled the substrate (sqlglot, airbyte-python-cdk, universql,
 > fastapi-permissions) were deep-read in a prior session; their cards live in
-> [`../../design/research/prototype-prior-art.md`](../../design/research/prototype-prior-art.md) and are **not**
+> `../../design/research/prototype-prior-art.md` and are **not**
 > re-surveyed here.
 >
 > **Phase 0 had exactly one genuine open question**, created by `03-BUILD-PROCESS.md`'s decision to *front-load

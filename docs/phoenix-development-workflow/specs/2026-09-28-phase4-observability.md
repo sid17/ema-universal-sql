@@ -1,6 +1,6 @@
 # Phase 4 — Observability, Load & Artifacts — Design Spec
 
-> **Source of truth:** [`docs/design/phases/phase-4-observability.md`](../../design/phases/phase-4-observability.md),
+> **Source of truth:** `docs/design/phases/phase-4-observability.md`,
 > with seven corrections applied 2026-09-28 before this spec was written. The phase file wins on any conflict.
 > ADRs 037–045: [`docs/kickoff/v5/architecture.md`](../../kickoff/v5/architecture.md). Measurements:
 > [`docs/kickoff/v5/research-repos.md`](../../kickoff/v5/research-repos.md).

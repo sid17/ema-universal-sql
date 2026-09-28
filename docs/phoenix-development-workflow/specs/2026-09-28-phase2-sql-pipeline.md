@@ -1,7 +1,7 @@
 # Phase 2 — SQL Pipeline — Design Spec
 
 > **Status:** ready for `/plan-phase`.
-> **Source of truth:** [`docs/design/phases/phase-2-sql-pipeline.md`](../../design/phases/phase-2-sql-pipeline.md)
+> **Source of truth:** `docs/design/phases/phase-2-sql-pipeline.md`
 > — it wins on any conflict. Eight corrections were applied there first (see its header); this spec is written
 > against the corrected file and adds the four things a phase file does not carry: **MUST/SHOULD/COULD tiering
 > per task**, **explicit file paths**, **the test list as named files**, and **which README sections this phase

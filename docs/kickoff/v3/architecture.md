@@ -10,7 +10,7 @@
 > Recorded below are the **ten decisions Phase 2 genuinely opened**. Five come from the runtime probe in
 > [`research-repos.md`](./research-repos.md); three from contradictions the phase file carried; two from
 > watch-outs Phase 0 and Phase 1 deliberately left open. Every matching correction is applied at source in
-> [`../../design/phases/phase-2-sql-pipeline.md`](../../design/phases/phase-2-sql-pipeline.md).
+> `../../design/phases/phase-2-sql-pipeline.md`.
 
 ## Where Phase 2 sits
 

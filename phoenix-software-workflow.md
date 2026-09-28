@@ -118,8 +118,6 @@ Each kickoff run is versioned (`docs/kickoff/v1/`, `v2/`, ...). Each version pub
 | `docs/phoenix-development-workflow/plans/` | Execution plans created by plan-phase |
 | `docs/phoenix-development-workflow/handoff.md` | Session state — created by `/handoff` |
 | `docs/kickoff/v<N>/` | Kickoff brainstorming artifacts per version |
-| `meta/phoenix-kickoff/` | Kickoff workflow feedback artifacts |
-| `meta/phoenix-development/` | Dev workflow feedback artifacts |
 
 ---
 

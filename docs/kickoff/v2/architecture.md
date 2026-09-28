@@ -8,7 +8,7 @@
 > This file records only the **seven decisions Phase 1 genuinely opened** — six of them because building
 > Phase 0 revealed the phase file was written against a codebase that did not yet exist, and one because
 > [`research-repos.md`](./research-repos.md) changed a design. The matching corrections are already applied
-> at source in [`../../design/phases/phase-1-connectors.md`](../../design/phases/phase-1-connectors.md).
+> at source in `../../design/phases/phase-1-connectors.md`.
 
 ## Where Phase 1 sits
 
