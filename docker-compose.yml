@@ -1,0 +1,83 @@
+# Three services, deliberately: app, postgres, redis.
+#
+# ADR-016 — no Jaeger and no OTLP collector. The trace requirement is met with an
+# in-process exporter and a rendered waterfall, so a fourth container would only
+# cost cold-start time against the "healthy in under 60s" submission gate.
+#
+# `app` waits on both backing services being *healthy*, not merely started, so
+# `make up` cannot race the database on a cold machine.
+
+services:
+  app:
+    build: .
+    image: universal-sql-app
+    ports:
+      - "8000:8000"
+    environment:
+      JWT_SECRET: ${JWT_SECRET:-dev-only-signing-key-not-for-production}
+      JWT_AUDIENCE: ${JWT_AUDIENCE:-ema-universal-sql}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/universal_sql}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      REQUEST_TIMEOUT_MS: ${REQUEST_TIMEOUT_MS:-5000}
+      CONTROL_PLANE_TTL_MS: ${CONTROL_PLANE_TTL_MS:-30000}
+      CACHE_TTL_MS: ${CACHE_TTL_MS:-60000}
+      TEST_MODE: ${TEST_MODE:-0}
+      DEFAULT_SCOPES: ${DEFAULT_SCOPES:-query:execute}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # Must be passed through, or `OTEL_EXPORTER=none make load` in Phase 4
+      # silently keeps exporting and distorts the very latency k6 measures.
+      OTEL_EXPORTER: ${OTEL_EXPORTER:-file}
+      OTEL_TRACE_FILE: ${OTEL_TRACE_FILE:-traces/spans.jsonl}
+    # ADR-016 keeps tracing backend-free, so the JSONL span log *is* the
+    # artifact. Bind-mounted rather than left in the container so Phase 4 can
+    # render the waterfall from the host after `make down`.
+    volumes:
+      - ./traces:/app/traces
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      # The image is python:3.11-slim and carries no curl; urllib keeps it slim.
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen("http://localhost:8000/healthz").read()
+      interval: 3s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: universal_sql
+    # No published host port: a developer machine very often already has
+    # something on 5432, and `app` reaches Postgres over the compose network.
+    # Use `docker compose exec postgres psql -U postgres -d universal_sql`.
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d universal_sql"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+      start_period: 3s
+
+  redis:
+    image: redis:7
+    # Same reasoning as postgres: unpublished, reached over the compose network.
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+      start_period: 2s
+
+volumes:
+  postgres_data:

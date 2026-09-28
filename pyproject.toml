@@ -1,0 +1,64 @@
+[project]
+name = "universal-sql-prototype"
+version = "0.1.0"
+description = "Federated SQL across enterprise apps — GitHub PRs joined to Jira issues, with query-time entitlement, per-tenant rate limiting and staleness-controlled caching."
+requires-python = ">=3.11,<3.12"
+
+# Every dependency for phases 0-4 is declared here up front. 03-BUILD-PROCESS.md
+# makes "no later phase edits pyproject.toml" a precondition for the phases being
+# file-disjoint, so P1's Fernet/Redis and P2's sqlglot/DuckDB land now even though
+# nothing imports them yet.
+dependencies = [
+    # API
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    # auth + secrets
+    "pyjwt>=2.9",
+    "cryptography>=43",
+    # SQL pipeline (Phase 2)
+    "sqlglot>=27",
+    "duckdb>=1.1",
+    "pyarrow>=18",
+    # state + control plane
+    "redis>=5.2",
+    "psycopg[binary,pool]>=3.2",
+    # observability. The four opentelemetry-* packages are pre-1.0 and must be
+    # upgraded as a set. FastAPIInstrumentor ships in its own distribution — the
+    # phase file's list omitted it (v1 research finding).
+    "opentelemetry-api>=1.28",
+    "opentelemetry-sdk>=1.28",
+    "opentelemetry-instrumentation-fastapi>=0.49b0",
+    "prometheus-client>=0.21",
+    "prometheus-fastapi-instrumentator>=7.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "httpx>=0.28",
+    "playwright>=1.49",
+    "ruff>=0.8",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+# LAW 7: no ignore list. A violation gets fixed in the code, not silenced here.
+select = ["E", "F", "I", "UP", "B", "SIM"]

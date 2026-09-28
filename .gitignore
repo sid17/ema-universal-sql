@@ -10,6 +10,7 @@ dist/
 build/
 *.log
 .env
+/traces/
 .DS_Store
 .idea/
 .vscode/
