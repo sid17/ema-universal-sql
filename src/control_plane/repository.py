@@ -225,3 +225,24 @@ class ControlPlaneRepository:
             return rows[0] if rows else None
 
         return self._cache.get_or_load(("rate_limit", tenant_id, connector_type), load)
+
+    def get_secret(self, secret_ref: str) -> dict[str, Any] | None:
+        """The encrypted secret behind a ``tenant_connector.secret_ref``.
+
+        **Deliberately not cached**, unlike every other read on this class. The
+        other reads are policy and capability metadata; this one is ciphertext
+        whose plaintext is a credential. Holding it in a process-local dictionary
+        for the control-plane TTL would widen the window in which a heap dump
+        exposes it, and would keep serving a secret that had already been rotated
+        or revoked — the opposite of what rotation is for. The read is a single
+        indexed primary-key lookup, so caching buys very little anyway.
+
+        Returns the row including ``tenant_id``: the owning tenant comes from
+        the stored row, never from the caller, so a caller cannot ask for one
+        tenant's ciphertext to be decrypted with another tenant's key.
+        """
+        rows = self._query(
+            "SELECT secret_ref, tenant_id, ciphertext FROM secrets WHERE secret_ref = %s",
+            (secret_ref,),
+        )
+        return rows[0] if rows else None
