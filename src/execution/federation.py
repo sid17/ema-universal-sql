@@ -162,7 +162,22 @@ class FederationEngine:
         """
         fetches = await self._fetch_all(plan, tenant_id, max_staleness_ms, source_limit)
         self._raise_on_hard_failure(fetches)
-        rows, columns = join_sources(plan, fetches, row_limit)
+        # OFF THE EVENT LOOP, and this is a measured decision rather than a
+        # precaution. Phase 4's load run found the join to be 10.3ms of pure
+        # synchronous CPU per request against 0.25ms for the audit INSERT and
+        # 0.24ms for the parse — ~95% of everything that blocks the loop. Run
+        # inline it serializes every concurrent request behind one core and caps
+        # a worker at ~1000/10.3 ≈ 97 RPS in theory, 48 RPS measured.
+        #
+        # `to_thread` rather than a process pool because DuckDB releases the GIL
+        # for query execution, and because the Arrow tables would otherwise have
+        # to be pickled across a process boundary — which would cost more than
+        # the join. It also copies the caller's contextvars, so the `duckdb_join`
+        # span is still parented to `federation` and the waterfall is unchanged.
+        #
+        # Safe by construction: each call opens its OWN `:memory:` connection and
+        # closes it in a `finally`, so no DuckDB state is shared across threads.
+        rows, columns = await asyncio.to_thread(join_sources, plan, fetches, row_limit)
         return FederationResult(rows=rows, columns=columns, fetches=fetches)
 
     # -- the parallel fetch, with a real deadline --------------------------
