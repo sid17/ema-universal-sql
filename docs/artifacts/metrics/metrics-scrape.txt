@@ -1,0 +1,75 @@
+# HELP http_request_size_bytes Content length of incoming requests by handler. Only value of header is respected. Otherwise ignored. No percentile calculated. 
+# TYPE http_request_size_bytes summary
+http_request_size_bytes_count{handler="/healthz"} 9.0
+http_request_size_bytes_sum{handler="/healthz"} 0.0
+http_request_size_bytes_count{handler="/v1/test/reset"} 603.0
+http_request_size_bytes_sum{handler="/v1/test/reset"} 0.0
+# HELP http_response_size_bytes Content length of outgoing responses by handler. Only value of header is respected. Otherwise ignored. No percentile calculated. 
+# TYPE http_response_size_bytes summary
+http_response_size_bytes_count{handler="/healthz"} 9.0
+http_response_size_bytes_sum{handler="/healthz"} 135.0
+http_response_size_bytes_count{handler="/v1/test/reset"} 603.0
+http_response_size_bytes_sum{handler="/v1/test/reset"} 13266.0
+# HELP query_duration_seconds End-to-end POST /v1/query latency, including requests that failed.
+# TYPE query_duration_seconds histogram
+query_duration_seconds_sum 0.0
+query_duration_seconds_bucket{le="0.005"} 0.0
+query_duration_seconds_bucket{le="0.01"} 0.0
+query_duration_seconds_bucket{le="0.025"} 0.0
+query_duration_seconds_bucket{le="0.05"} 0.0
+query_duration_seconds_bucket{le="0.075"} 0.0
+query_duration_seconds_bucket{le="0.1"} 0.0
+query_duration_seconds_bucket{le="0.25"} 0.0
+query_duration_seconds_bucket{le="0.5"} 0.0
+query_duration_seconds_bucket{le="0.75"} 0.0
+query_duration_seconds_bucket{le="1.0"} 0.0
+query_duration_seconds_bucket{le="2.5"} 0.0
+query_duration_seconds_bucket{le="5.0"} 0.0
+query_duration_seconds_bucket{le="7.5"} 0.0
+query_duration_seconds_bucket{le="10.0"} 0.0
+query_duration_seconds_bucket{le="+Inf"} 0.0
+query_duration_seconds_count 0.0
+# HELP http_request_duration_highr_seconds Latency with many buckets but no API specific labels. Made for more accurate percentile calculations. 
+# TYPE http_request_duration_highr_seconds histogram
+http_request_duration_highr_seconds_sum 0.7194055059917446
+http_request_duration_highr_seconds_bucket{le="0.01"} 609.0
+http_request_duration_highr_seconds_bucket{le="0.025"} 612.0
+http_request_duration_highr_seconds_bucket{le="0.05"} 612.0
+http_request_duration_highr_seconds_bucket{le="0.075"} 612.0
+http_request_duration_highr_seconds_bucket{le="0.1"} 612.0
+http_request_duration_highr_seconds_bucket{le="0.25"} 612.0
+http_request_duration_highr_seconds_bucket{le="0.5"} 612.0
+http_request_duration_highr_seconds_bucket{le="0.75"} 612.0
+http_request_duration_highr_seconds_bucket{le="1.0"} 612.0
+http_request_duration_highr_seconds_bucket{le="1.5"} 612.0
+http_request_duration_highr_seconds_bucket{le="2.0"} 612.0
+http_request_duration_highr_seconds_bucket{le="2.5"} 612.0
+http_request_duration_highr_seconds_bucket{le="3.0"} 612.0
+http_request_duration_highr_seconds_bucket{le="3.5"} 612.0
+http_request_duration_highr_seconds_bucket{le="4.0"} 612.0
+http_request_duration_highr_seconds_bucket{le="4.5"} 612.0
+http_request_duration_highr_seconds_bucket{le="5.0"} 612.0
+http_request_duration_highr_seconds_bucket{le="7.5"} 612.0
+http_request_duration_highr_seconds_bucket{le="10.0"} 612.0
+http_request_duration_highr_seconds_bucket{le="30.0"} 612.0
+http_request_duration_highr_seconds_bucket{le="60.0"} 612.0
+http_request_duration_highr_seconds_bucket{le="+Inf"} 612.0
+http_request_duration_highr_seconds_count 612.0
+# HELP http_request_duration_seconds Latency with only few buckets by handler. Made to be only used if aggregation by handler is important. 
+# TYPE http_request_duration_seconds histogram
+http_request_duration_seconds_sum{handler="/healthz",method="GET"} 0.04492670900435769
+http_request_duration_seconds_bucket{handler="/healthz",le="0.1",method="GET"} 9.0
+http_request_duration_seconds_bucket{handler="/healthz",le="0.5",method="GET"} 9.0
+http_request_duration_seconds_bucket{handler="/healthz",le="1.0",method="GET"} 9.0
+http_request_duration_seconds_bucket{handler="/healthz",le="+Inf",method="GET"} 9.0
+http_request_duration_seconds_count{handler="/healthz",method="GET"} 9.0
+http_request_duration_seconds_sum{handler="/v1/test/reset",method="POST"} 0.6744787969873869
+http_request_duration_seconds_bucket{handler="/v1/test/reset",le="0.1",method="POST"} 603.0
+http_request_duration_seconds_bucket{handler="/v1/test/reset",le="0.5",method="POST"} 603.0
+http_request_duration_seconds_bucket{handler="/v1/test/reset",le="1.0",method="POST"} 603.0
+http_request_duration_seconds_bucket{handler="/v1/test/reset",le="+Inf",method="POST"} 603.0
+http_request_duration_seconds_count{handler="/v1/test/reset",method="POST"} 603.0
+# HELP http_requests_total Total number of requests by method, status and handler.
+# TYPE http_requests_total counter
+http_requests_total{handler="/healthz",method="GET",status="2xx"} 9.0
+http_requests_total{handler="/v1/test/reset",method="POST",status="4xx"} 603.0

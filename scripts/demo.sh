@@ -18,7 +18,8 @@
 set -euo pipefail
 
 BASE="${BASE_URL:-http://localhost:8000}"
-OUT="${DEMO_OUTPUT:-docs/demo-output.txt}"
+OUT="${DEMO_OUTPUT:-docs/artifacts/demo/demo-output.txt}"
+mkdir -p "$(dirname "$OUT")"
 PY="${PYTHON:-.venv/bin/python}"
 
 CANONICAL="SELECT pr.title, pr.author, issue.key, issue.status

@@ -21,7 +21,7 @@ Usage::
 
     python scripts/waterfall.py                      # newest COMPLETE trace
     python scripts/waterfall.py --trace-id abc123...
-    python scripts/waterfall.py --out docs/trace-waterfall.txt --svg docs/x.svg
+    python scripts/waterfall.py --out traces/trace-waterfall.txt --svg traces/trace-waterfall.svg
 """
 
 from __future__ import annotations

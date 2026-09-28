@@ -29,7 +29,6 @@ LOG="traces/spans.jsonl"
 CANONICAL='SELECT pr.title, pr.author, issue.key, issue.status FROM github.pull_requests pr JOIN jira.issues issue ON pr.issue_key = issue.key WHERE pr.repo = '"'"'ema/core'"'"' AND pr.state = '"'"'open'"'"' AND issue.status = '"'"'In Progress'"'"' ORDER BY issue.updated DESC LIMIT 50'
 
 mkdir -p traces docs
-: > "$LOG"
 
 token=$(curl -fsS -XPOST "$BASE/v1/auth/mock-token" \
   -H 'content-type: application/json' \
@@ -40,6 +39,27 @@ if [ -z "$token" ]; then
   echo "FAILED: could not mint a token against $BASE — is the stack up (\`make up\`)?" >&2
   exit 1
 fi
+
+# WARM THE DUCKDB POOL FIRST, then truncate the span log so only the measured
+# query survives. Without this the trace is a worker's FIRST query for this
+# tenant, which pays the 6.5ms instance creation and renders `duckdb_join` at
+# ~58ms — roughly 28x its steady-state cost. A waterfall that advertises a
+# cold start as the typical case is worse than no waterfall.
+#
+# With 8 workers the warm-up is repeated: requests are load-balanced, so one
+# call warms one worker. Enough rounds to make it very likely the measured
+# query lands on a warm one.
+i=0
+while [ $i -lt 24 ]; do
+  curl -fsS -XPOST "$BASE/v1/query" \
+    -H "authorization: Bearer $token" \
+    -H 'content-type: application/json' \
+    -d "{\"sql\": \"${CANONICAL}\", \"max_staleness_ms\": 60000}" >/dev/null || true
+  i=$((i + 1))
+done
+
+# Truncated AFTER the warm-up so the artifact provably describes one query.
+: > "$LOG"
 
 trace=$(curl -fsS -XPOST "$BASE/v1/query" \
   -H "authorization: Bearer $token" \
@@ -67,6 +87,7 @@ until docker compose exec -T app python scripts/waterfall.py \
   sleep 1
 done
 
-mv traces/trace-waterfall.txt traces/trace-waterfall.svg docs/
-cat docs/trace-waterfall.txt
-echo "wrote docs/trace-waterfall.txt and docs/trace-waterfall.svg"
+mkdir -p docs/artifacts/trace
+mv traces/trace-waterfall.txt traces/trace-waterfall.svg docs/artifacts/trace/
+cat docs/artifacts/trace/trace-waterfall.txt
+echo "wrote docs/artifacts/trace/trace-waterfall.{txt,svg}"
