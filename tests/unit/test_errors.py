@@ -9,7 +9,12 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from src.gateway.handlers import install_error_handlers
-from src.models.errors import ApiError, ErrorCode, UnauthenticatedError
+from src.models.errors import (
+    ApiError,
+    ErrorCode,
+    InvalidQueryError,
+    UnauthenticatedError,
+)
 
 EXPECTED_CODES = {
     "RATE_LIMIT_EXHAUSTED",
@@ -57,6 +62,17 @@ def client() -> TestClient:
     @app.get("/unauthenticated")
     def unauthenticated():
         raise UnauthenticatedError("Missing or invalid bearer token")
+
+    @app.get("/invalid-query")
+    def invalid_query():
+        raise InvalidQueryError(
+            "SELECT * is not supported; name the columns you need",
+            detail="Star",
+        )
+
+    @app.get("/invalid-query-bare")
+    def invalid_query_bare():
+        raise InvalidQueryError("could not parse the query")
 
     return TestClient(app, raise_server_exceptions=False)
 
@@ -121,3 +137,41 @@ def test_unauthenticated_maps_to_401(client):
 def test_non_rate_limit_error_gets_no_default_suggested_action():
     error = ApiError(code=ErrorCode.STALE_DATA, http=200, message="served from cache")
     assert error.suggested_action is None
+
+
+# --- INVALID_QUERY (ADR-028) ------------------------------------------------
+
+
+def test_invalid_query_maps_to_400(client):
+    response = client.get("/invalid-query")
+    assert response.status_code == 400
+    body = response.json()
+    assert body["error_code"] == "INVALID_QUERY"
+    assert body["detail"] == "Star"
+
+
+def test_invalid_query_omits_detail_when_there_is_none(client):
+    """Same rule as every other optional field: absent, not null.
+
+    A caller branching on `"detail" in body` must not be handed a null.
+    """
+    assert "detail" not in client.get("/invalid-query-bare").json()
+
+
+def test_invalid_query_is_not_one_of_the_six(client):
+    """The whole point of ADR-028.
+
+    `INVALID_QUERY` and `UNAUTHENTICATED` are request-shape failures and live
+    OUTSIDE the domain vocabulary that design-doc §8.1 publishes. If either ever
+    becomes an `ErrorCode`, the prototype and the submitted document have
+    silently desynced — which is the one thing the shared vocabulary exists to
+    prevent.
+    """
+    assert "INVALID_QUERY" not in EXPECTED_CODES
+    assert "INVALID_QUERY" not in {code.value for code in ErrorCode}
+    assert "UNAUTHENTICATED" not in {code.value for code in ErrorCode}
+
+
+def test_invalid_query_carries_no_retry_after(client):
+    """Malformed SQL does not improve on retry, so advising one would be a lie."""
+    assert "Retry-After" not in client.get("/invalid-query").headers

@@ -6,7 +6,7 @@ from typing import Any
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from src.models.errors import ApiError, UnauthenticatedError
+from src.models.errors import ApiError, InvalidQueryError, UnauthenticatedError
 
 
 def _error_body(error_code: str, message: str, **optional: Any) -> dict[str, Any]:
@@ -41,7 +41,21 @@ async def _handle_unauthenticated(_request: Request, exc: UnauthenticatedError) 
     )
 
 
+async def _handle_invalid_query(_request: Request, exc: InvalidQueryError) -> JSONResponse:
+    """400. ``detail`` names the offending construct when one was identified."""
+    return JSONResponse(
+        status_code=exc.http,
+        content=_error_body(exc.error_code, exc.message, detail=exc.detail),
+    )
+
+
 def install_error_handlers(app: FastAPI) -> None:
-    """Register the two exception handlers on the app."""
+    """Register the three exception handlers on the app.
+
+    One per exception type, and the set is closed: anything else reaching here
+    is a bug and must surface as a 500 with a traceback in the log, not be
+    quietly rendered as a tidy error body (LAW 4).
+    """
     app.add_exception_handler(ApiError, _handle_api_error)
     app.add_exception_handler(UnauthenticatedError, _handle_unauthenticated)
+    app.add_exception_handler(InvalidQueryError, _handle_invalid_query)

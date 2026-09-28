@@ -46,6 +46,23 @@ from src.governance.ratelimit import RateLimitPolicy, TokenBucketRateLimiter
 from src.governance.secrets import SecretsManagerClient
 from src.models.errors import ApiError, ErrorCode
 
+#: HTTP status per error code, from design-doc §8.1 — the published table.
+#:
+#: A lookup rather than an inline conditional, because the conditional it
+#: replaced (``504 if SOURCE_TIMEOUT else 502``) quietly gave
+#: ``CONNECTOR_AUTH_ERROR`` a 502 while every locked document says 403. HLD §9
+#: makes the error vocabulary a provenance rail that must be identical across
+#: the design doc, the HLD and every phase spec; a rail is much harder to break
+#: from a table that states it than from an ``else`` branch (ADR-029).
+HTTP_STATUS_FOR_CODE = {
+    ErrorCode.SOURCE_TIMEOUT: 504,
+    ErrorCode.RATE_LIMIT_EXHAUSTED: 429,
+    ErrorCode.CONNECTOR_AUTH_ERROR: 403,
+    ErrorCode.CONNECTOR_NOT_ENABLED: 403,
+    ErrorCode.ENTITLEMENT_DENIED: 403,
+    ErrorCode.STALE_DATA: 200,
+}
+
 #: Operators the mock datasets can evaluate in memory.
 _COMPARATORS = {
     "=": lambda row, value: row == value,
@@ -336,6 +353,6 @@ class MockConnectorAdapter(BaseConnectorAdapter):
         classification = classify(mode)
         raise ApiError(
             code=classification.error_code,
-            http=504 if classification.error_code is ErrorCode.SOURCE_TIMEOUT else 502,
+            http=HTTP_STATUS_FOR_CODE[classification.error_code],
             message=f"{self.connector_type}: forced {mode.value} (mock failure hook)",
         )

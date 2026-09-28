@@ -51,8 +51,8 @@ class SecretsManagerClient:
     def resolve(self, secret_ref: str) -> str:
         """Decrypt the secret behind ``secret_ref`` with its own tenant's key.
 
-        Raises ``CONNECTOR_AUTH_ERROR`` — classified ``config_error`` and so
-        **not** degradable — for every failure path. A missing grant, a missing
+        Raises ``CONNECTOR_AUTH_ERROR`` (**403**) — classified ``config_error``
+        and so **not** degradable — for every failure path. A missing grant, a missing
         key and a destroyed key are all "this connector cannot be called with
         valid credentials", and none of them improve on retry.
         """
@@ -98,6 +98,18 @@ class SecretsManagerClient:
     def _auth_error(detail: str) -> ApiError:
         return ApiError(
             code=ErrorCode.CONNECTOR_AUTH_ERROR,
-            http=502,
+            # 403, not 502 (ADR-029). HLD §4, design-doc §8.1 and the phase-2
+            # file all say 403, and HLD §9 makes the error vocabulary a
+            # provenance rail that must be identical across all three. Phase 1
+            # shipped 502; Phase 2 is the first phase to render this code over
+            # HTTP, so it is the phase that has to reconcile it.
+            #
+            # 403 is also the better answer on its merits: a revoked credential
+            # is not this server erring, it is this tenant's connector being
+            # unusable, and the caller action is administrative ("reconnect
+            # GitHub") rather than "retry later" — which is exactly what 403
+            # communicates and 502 does not.
+            http=403,
             message=f"Connector credentials unavailable: {detail}",
+            suggested_action="Reconnect this connector for the tenant (admin).",
         )

@@ -1,10 +1,17 @@
 """The error vocabulary: six domain codes, one exception type.
 
 These six are the shared vocabulary between the prototype and design-doc §8.1.
-A transport-level failure — a missing, expired or forged token — is **401
-UNAUTHENTICATED** and is deliberately *not* one of them: diluting the six with
-transport failures desyncs the two deliverables. It gets its own exception
-below instead.
+Two failures are deliberately *not* among them, and both get their own exception
+type below rather than a code:
+
+``UnauthenticatedError`` (401)
+    A missing, expired or forged token. A transport-level failure.
+
+``InvalidQueryError`` (400)
+    SQL outside the supported subset. A request-shape failure.
+
+Diluting the six with either would desync this prototype from the submitted
+design doc, which is the one thing the shared vocabulary exists to prevent.
 """
 
 from enum import StrEnum
@@ -62,3 +69,35 @@ class UnauthenticatedError(Exception):
     def __init__(self, message: str = "Authentication required") -> None:
         super().__init__(message)
         self.message = message
+
+
+class InvalidQueryError(Exception):
+    """400. Also **not** an ``ErrorCode``, for the same reason as the 401 above.
+
+    The SQL is outside the supported subset: a parse failure, a banned construct
+    (``SELECT *``, a subquery, an aggregate, a join we do not support), or a
+    column the connector schema does not declare.
+
+    **Why not one of the six** (ADR-028). The six are the vocabulary this
+    prototype shares verbatim with design-doc §8.1, and every one of them
+    describes entitlement, throttling, freshness or connector state. None
+    describes *"your query is not in the supported subset"*. The obvious
+    shortcut — reusing ``ENTITLEMENT_DENIED`` — would be actively wrong: it tells
+    a caller to go request access for what is a typo, and it makes a graded
+    security code mean two unrelated things. Adding a seventh code would mean
+    changing the submitted design doc. So this follows the precedent
+    :class:`UnauthenticatedError` already set: a request-shape failure lives
+    outside the domain vocabulary and is documented as such.
+
+    ``detail`` names the offending construct where one can be identified, because
+    "unsupported SQL" with no pointer is the least actionable error a query API
+    can return.
+    """
+
+    error_code = "INVALID_QUERY"
+    http = 400
+
+    def __init__(self, message: str, detail: str | None = None) -> None:
+        super().__init__(message)
+        self.message = message
+        self.detail = detail

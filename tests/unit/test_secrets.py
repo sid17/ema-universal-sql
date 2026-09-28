@@ -162,7 +162,34 @@ def test_unknown_secret_ref_is_an_auth_error(secrets):
     with pytest.raises(ApiError) as raised:
         secrets.resolve("nope/github")
     assert raised.value.code is ErrorCode.CONNECTOR_AUTH_ERROR
-    assert raised.value.http == 502
+    # 403, not 502 (ADR-029). HLD §4, design-doc §8.1 and the phase-2 file all
+    # say 403; HLD §9 makes the error vocabulary a provenance rail that must be
+    # identical across all three. This assertion is the rail, pinned in a test.
+    assert raised.value.http == 403
+
+
+def test_every_auth_failure_path_uses_the_same_http_code(store, secrets):
+    """All four failure paths, one code. A vocabulary with two HTTP codes for
+    one error code is not a vocabulary — a caller cannot branch on it.
+
+    Written as a loop over the paths rather than four separate assertions
+    precisely because the thing under test is their *agreement*.
+    """
+    store._secrets["orphan/x"] = {
+        "secret_ref": "orphan/x",
+        "tenant_id": "tenant_vanished",
+        "ciphertext": SecretsManagerClient.encrypt(ACME_KEY, "x"),
+    }
+    store._secrets["corrupt/x"] = {
+        "secret_ref": "corrupt/x",
+        "tenant_id": "tenant_acme",
+        "ciphertext": "not-a-fernet-token",
+    }
+    for ref in ("nope/github", "orphan/x", "corrupt/x"):
+        with pytest.raises(ApiError) as raised:
+            secrets.resolve(ref)
+        assert raised.value.http == 403, ref
+        assert raised.value.code is ErrorCode.CONNECTOR_AUTH_ERROR, ref
 
 
 def test_secret_naming_a_missing_tenant_is_an_auth_error(store, secrets):
