@@ -1,10 +1,21 @@
+# HELP http_requests_total Total number of requests by method, status and handler.
+# TYPE http_requests_total counter
+http_requests_total{handler="/v1/query",method="POST",status="2xx"} 30.0
+http_requests_total{handler="/v1/auth/mock-token",method="POST",status="2xx"} 6.0
+http_requests_total{handler="/healthz",method="GET",status="2xx"} 2.0
+http_requests_total{handler="/v1/test/reset",method="POST",status="2xx"} 1.0
+http_requests_total{handler="/v1/test/fail-next",method="POST",status="2xx"} 1.0
+# HELP rate_limit_remaining Requests left in the tenant's token bucket for a connector.
+# TYPE rate_limit_remaining gauge
+rate_limit_remaining{connector="github",tenant="tenant_acme"} 2.0
+rate_limit_remaining{connector="jira",tenant="tenant_acme"} 33.0
 # HELP http_request_size_bytes Content length of incoming requests by handler. Only value of header is respected. Otherwise ignored. No percentile calculated. 
 # TYPE http_request_size_bytes summary
-http_request_size_bytes_count{handler="/v1/auth/mock-token"} 6.0
-http_request_size_bytes_sum{handler="/v1/auth/mock-token"} 334.0
 http_request_size_bytes_count{handler="/v1/query"} 30.0
 http_request_size_bytes_sum{handler="/v1/query"} 8714.0
-http_request_size_bytes_count{handler="/healthz"} 3.0
+http_request_size_bytes_count{handler="/v1/auth/mock-token"} 6.0
+http_request_size_bytes_sum{handler="/v1/auth/mock-token"} 334.0
+http_request_size_bytes_count{handler="/healthz"} 2.0
 http_request_size_bytes_sum{handler="/healthz"} 0.0
 http_request_size_bytes_count{handler="/v1/test/reset"} 1.0
 http_request_size_bytes_sum{handler="/v1/test/reset"} 0.0
@@ -12,37 +23,26 @@ http_request_size_bytes_count{handler="/v1/test/fail-next"} 1.0
 http_request_size_bytes_sum{handler="/v1/test/fail-next"} 37.0
 # HELP http_response_size_bytes Content length of outgoing responses by handler. Only value of header is respected. Otherwise ignored. No percentile calculated. 
 # TYPE http_response_size_bytes summary
+http_response_size_bytes_count{handler="/v1/query"} 30.0
+http_response_size_bytes_sum{handler="/v1/query"} 29470.0
 http_response_size_bytes_count{handler="/v1/auth/mock-token"} 6.0
 http_response_size_bytes_sum{handler="/v1/auth/mock-token"} 2325.0
-http_response_size_bytes_count{handler="/v1/query"} 30.0
-http_response_size_bytes_sum{handler="/v1/query"} 29465.0
-http_response_size_bytes_count{handler="/healthz"} 3.0
-http_response_size_bytes_sum{handler="/healthz"} 45.0
+http_response_size_bytes_count{handler="/healthz"} 2.0
+http_response_size_bytes_sum{handler="/healthz"} 30.0
 http_response_size_bytes_count{handler="/v1/test/reset"} 1.0
 http_response_size_bytes_sum{handler="/v1/test/reset"} 18.0
 http_response_size_bytes_count{handler="/v1/test/fail-next"} 1.0
 http_response_size_bytes_sum{handler="/v1/test/fail-next"} 54.0
-# HELP http_requests_total Total number of requests by method, status and handler.
-# TYPE http_requests_total counter
-http_requests_total{handler="/healthz",method="GET",status="2xx"} 3.0
-http_requests_total{handler="/v1/test/reset",method="POST",status="2xx"} 1.0
-http_requests_total{handler="/v1/auth/mock-token",method="POST",status="2xx"} 6.0
-http_requests_total{handler="/v1/query",method="POST",status="2xx"} 30.0
-http_requests_total{handler="/v1/test/fail-next",method="POST",status="2xx"} 1.0
-# HELP rate_limit_remaining Requests left in the tenant's token bucket for a connector.
-# TYPE rate_limit_remaining gauge
-rate_limit_remaining{connector="github",tenant="tenant_acme"} 2.0
-rate_limit_remaining{connector="jira",tenant="tenant_acme"} 33.0
 # HELP query_duration_seconds End-to-end POST /v1/query latency, including requests that failed.
 # TYPE query_duration_seconds histogram
-query_duration_seconds_sum 1.3157905000043684
+query_duration_seconds_sum 1.372636082007375
 query_duration_seconds_bucket{le="0.005"} 0.0
-query_duration_seconds_bucket{le="0.01"} 14.0
+query_duration_seconds_bucket{le="0.01"} 20.0
 query_duration_seconds_bucket{le="0.025"} 24.0
 query_duration_seconds_bucket{le="0.05"} 24.0
 query_duration_seconds_bucket{le="0.075"} 25.0
 query_duration_seconds_bucket{le="0.1"} 26.0
-query_duration_seconds_bucket{le="0.25"} 28.0
+query_duration_seconds_bucket{le="0.25"} 27.0
 query_duration_seconds_bucket{le="0.5"} 30.0
 query_duration_seconds_bucket{le="0.75"} 30.0
 query_duration_seconds_bucket{le="1.0"} 30.0
@@ -54,65 +54,33 @@ query_duration_seconds_bucket{le="+Inf"} 30.0
 query_duration_seconds_count 30.0
 # HELP http_request_duration_highr_seconds Latency with many buckets but no API specific labels. Made for more accurate percentile calculations. 
 # TYPE http_request_duration_highr_seconds histogram
-http_request_duration_highr_seconds_sum 1.4284427520105965
+http_request_duration_highr_seconds_sum 1.4822327049987507
 http_request_duration_highr_seconds_bucket{le="0.01"} 9.0
-http_request_duration_highr_seconds_bucket{le="0.025"} 35.0
-http_request_duration_highr_seconds_bucket{le="0.05"} 35.0
-http_request_duration_highr_seconds_bucket{le="0.075"} 36.0
-http_request_duration_highr_seconds_bucket{le="0.1"} 37.0
-http_request_duration_highr_seconds_bucket{le="0.25"} 39.0
-http_request_duration_highr_seconds_bucket{le="0.5"} 41.0
-http_request_duration_highr_seconds_bucket{le="0.75"} 41.0
-http_request_duration_highr_seconds_bucket{le="1.0"} 41.0
-http_request_duration_highr_seconds_bucket{le="1.5"} 41.0
-http_request_duration_highr_seconds_bucket{le="2.0"} 41.0
-http_request_duration_highr_seconds_bucket{le="2.5"} 41.0
-http_request_duration_highr_seconds_bucket{le="3.0"} 41.0
-http_request_duration_highr_seconds_bucket{le="3.5"} 41.0
-http_request_duration_highr_seconds_bucket{le="4.0"} 41.0
-http_request_duration_highr_seconds_bucket{le="4.5"} 41.0
-http_request_duration_highr_seconds_bucket{le="5.0"} 41.0
-http_request_duration_highr_seconds_bucket{le="7.5"} 41.0
-http_request_duration_highr_seconds_bucket{le="10.0"} 41.0
-http_request_duration_highr_seconds_bucket{le="30.0"} 41.0
-http_request_duration_highr_seconds_bucket{le="60.0"} 41.0
-http_request_duration_highr_seconds_bucket{le="+Inf"} 41.0
-http_request_duration_highr_seconds_count 41.0
-# HELP http_request_duration_seconds Latency with only few buckets by handler. Made to be only used if aggregation by handler is important. 
-# TYPE http_request_duration_seconds histogram
-http_request_duration_seconds_sum{handler="/healthz",method="GET"} 0.027536541998415487
-http_request_duration_seconds_bucket{handler="/healthz",le="0.1",method="GET"} 3.0
-http_request_duration_seconds_bucket{handler="/healthz",le="0.5",method="GET"} 3.0
-http_request_duration_seconds_bucket{handler="/healthz",le="1.0",method="GET"} 3.0
-http_request_duration_seconds_bucket{handler="/healthz",le="+Inf",method="GET"} 3.0
-http_request_duration_seconds_count{handler="/healthz",method="GET"} 3.0
-http_request_duration_seconds_sum{handler="/v1/test/reset",method="POST"} 0.0021371660004660953
-http_request_duration_seconds_bucket{handler="/v1/test/reset",le="0.1",method="POST"} 1.0
-http_request_duration_seconds_bucket{handler="/v1/test/reset",le="0.5",method="POST"} 1.0
-http_request_duration_seconds_bucket{handler="/v1/test/reset",le="1.0",method="POST"} 1.0
-http_request_duration_seconds_bucket{handler="/v1/test/reset",le="+Inf",method="POST"} 1.0
-http_request_duration_seconds_count{handler="/v1/test/reset",method="POST"} 1.0
-http_request_duration_seconds_sum{handler="/v1/auth/mock-token",method="POST"} 0.017641291007748805
-http_request_duration_seconds_bucket{handler="/v1/auth/mock-token",le="0.1",method="POST"} 6.0
-http_request_duration_seconds_bucket{handler="/v1/auth/mock-token",le="0.5",method="POST"} 6.0
-http_request_duration_seconds_bucket{handler="/v1/auth/mock-token",le="1.0",method="POST"} 6.0
-http_request_duration_seconds_bucket{handler="/v1/auth/mock-token",le="+Inf",method="POST"} 6.0
-http_request_duration_seconds_count{handler="/v1/auth/mock-token",method="POST"} 6.0
-http_request_duration_seconds_sum{handler="/v1/query",method="POST"} 1.3793922950026172
-http_request_duration_seconds_bucket{handler="/v1/query",le="0.1",method="POST"} 26.0
-http_request_duration_seconds_bucket{handler="/v1/query",le="0.5",method="POST"} 30.0
-http_request_duration_seconds_bucket{handler="/v1/query",le="1.0",method="POST"} 30.0
-http_request_duration_seconds_bucket{handler="/v1/query",le="+Inf",method="POST"} 30.0
-http_request_duration_seconds_count{handler="/v1/query",method="POST"} 30.0
-http_request_duration_seconds_sum{handler="/v1/test/fail-next",method="POST"} 0.0017354580013488885
-http_request_duration_seconds_bucket{handler="/v1/test/fail-next",le="0.1",method="POST"} 1.0
-http_request_duration_seconds_bucket{handler="/v1/test/fail-next",le="0.5",method="POST"} 1.0
-http_request_duration_seconds_bucket{handler="/v1/test/fail-next",le="1.0",method="POST"} 1.0
-http_request_duration_seconds_bucket{handler="/v1/test/fail-next",le="+Inf",method="POST"} 1.0
-http_request_duration_seconds_count{handler="/v1/test/fail-next",method="POST"} 1.0
+http_request_duration_highr_seconds_bucket{le="0.025"} 34.0
+http_request_duration_highr_seconds_bucket{le="0.05"} 34.0
+http_request_duration_highr_seconds_bucket{le="0.075"} 35.0
+http_request_duration_highr_seconds_bucket{le="0.1"} 36.0
+http_request_duration_highr_seconds_bucket{le="0.25"} 37.0
+http_request_duration_highr_seconds_bucket{le="0.5"} 40.0
+http_request_duration_highr_seconds_bucket{le="0.75"} 40.0
+http_request_duration_highr_seconds_bucket{le="1.0"} 40.0
+http_request_duration_highr_seconds_bucket{le="1.5"} 40.0
+http_request_duration_highr_seconds_bucket{le="2.0"} 40.0
+http_request_duration_highr_seconds_bucket{le="2.5"} 40.0
+http_request_duration_highr_seconds_bucket{le="3.0"} 40.0
+http_request_duration_highr_seconds_bucket{le="3.5"} 40.0
+http_request_duration_highr_seconds_bucket{le="4.0"} 40.0
+http_request_duration_highr_seconds_bucket{le="4.5"} 40.0
+http_request_duration_highr_seconds_bucket{le="5.0"} 40.0
+http_request_duration_highr_seconds_bucket{le="7.5"} 40.0
+http_request_duration_highr_seconds_bucket{le="10.0"} 40.0
+http_request_duration_highr_seconds_bucket{le="30.0"} 40.0
+http_request_duration_highr_seconds_bucket{le="60.0"} 40.0
+http_request_duration_highr_seconds_bucket{le="+Inf"} 40.0
+http_request_duration_highr_seconds_count 40.0
 # HELP connector_fetch_duration_seconds Time one connector took to answer, including cache hits and failures.
 # TYPE connector_fetch_duration_seconds histogram
-connector_fetch_duration_seconds_sum{connector="github"} 0.22577379599169944
+connector_fetch_duration_seconds_sum{connector="github"} 0.22872200201527448
 connector_fetch_duration_seconds_bucket{connector="github",le="0.005"} 25.0
 connector_fetch_duration_seconds_bucket{connector="github",le="0.01"} 25.0
 connector_fetch_duration_seconds_bucket{connector="github",le="0.025"} 25.0
@@ -129,7 +97,7 @@ connector_fetch_duration_seconds_bucket{connector="github",le="7.5"} 30.0
 connector_fetch_duration_seconds_bucket{connector="github",le="10.0"} 30.0
 connector_fetch_duration_seconds_bucket{connector="github",le="+Inf"} 30.0
 connector_fetch_duration_seconds_count{connector="github"} 30.0
-connector_fetch_duration_seconds_sum{connector="jira"} 0.7554335800014087
+connector_fetch_duration_seconds_sum{connector="jira"} 0.7598766690061893
 connector_fetch_duration_seconds_bucket{connector="jira",le="0.005"} 26.0
 connector_fetch_duration_seconds_bucket{connector="jira",le="0.01"} 26.0
 connector_fetch_duration_seconds_bucket{connector="jira",le="0.025"} 26.0
@@ -146,3 +114,35 @@ connector_fetch_duration_seconds_bucket{connector="jira",le="7.5"} 30.0
 connector_fetch_duration_seconds_bucket{connector="jira",le="10.0"} 30.0
 connector_fetch_duration_seconds_bucket{connector="jira",le="+Inf"} 30.0
 connector_fetch_duration_seconds_count{connector="jira"} 30.0
+# HELP http_request_duration_seconds Latency with only few buckets by handler. Made to be only used if aggregation by handler is important. 
+# TYPE http_request_duration_seconds histogram
+http_request_duration_seconds_sum{handler="/v1/query",method="POST"} 1.445412455999758
+http_request_duration_seconds_bucket{handler="/v1/query",le="0.1",method="POST"} 26.0
+http_request_duration_seconds_bucket{handler="/v1/query",le="0.5",method="POST"} 30.0
+http_request_duration_seconds_bucket{handler="/v1/query",le="1.0",method="POST"} 30.0
+http_request_duration_seconds_bucket{handler="/v1/query",le="+Inf",method="POST"} 30.0
+http_request_duration_seconds_count{handler="/v1/query",method="POST"} 30.0
+http_request_duration_seconds_sum{handler="/v1/auth/mock-token",method="POST"} 0.010329207998438505
+http_request_duration_seconds_bucket{handler="/v1/auth/mock-token",le="0.1",method="POST"} 6.0
+http_request_duration_seconds_bucket{handler="/v1/auth/mock-token",le="0.5",method="POST"} 6.0
+http_request_duration_seconds_bucket{handler="/v1/auth/mock-token",le="1.0",method="POST"} 6.0
+http_request_duration_seconds_bucket{handler="/v1/auth/mock-token",le="+Inf",method="POST"} 6.0
+http_request_duration_seconds_count{handler="/v1/auth/mock-token",method="POST"} 6.0
+http_request_duration_seconds_sum{handler="/healthz",method="GET"} 0.01570045800326625
+http_request_duration_seconds_bucket{handler="/healthz",le="0.1",method="GET"} 2.0
+http_request_duration_seconds_bucket{handler="/healthz",le="0.5",method="GET"} 2.0
+http_request_duration_seconds_bucket{handler="/healthz",le="1.0",method="GET"} 2.0
+http_request_duration_seconds_bucket{handler="/healthz",le="+Inf",method="GET"} 2.0
+http_request_duration_seconds_count{handler="/healthz",method="GET"} 2.0
+http_request_duration_seconds_sum{handler="/v1/test/reset",method="POST"} 0.009230874999047955
+http_request_duration_seconds_bucket{handler="/v1/test/reset",le="0.1",method="POST"} 1.0
+http_request_duration_seconds_bucket{handler="/v1/test/reset",le="0.5",method="POST"} 1.0
+http_request_duration_seconds_bucket{handler="/v1/test/reset",le="1.0",method="POST"} 1.0
+http_request_duration_seconds_bucket{handler="/v1/test/reset",le="+Inf",method="POST"} 1.0
+http_request_duration_seconds_count{handler="/v1/test/reset",method="POST"} 1.0
+http_request_duration_seconds_sum{handler="/v1/test/fail-next",method="POST"} 0.001559707998239901
+http_request_duration_seconds_bucket{handler="/v1/test/fail-next",le="0.1",method="POST"} 1.0
+http_request_duration_seconds_bucket{handler="/v1/test/fail-next",le="0.5",method="POST"} 1.0
+http_request_duration_seconds_bucket{handler="/v1/test/fail-next",le="1.0",method="POST"} 1.0
+http_request_duration_seconds_bucket{handler="/v1/test/fail-next",le="+Inf",method="POST"} 1.0
+http_request_duration_seconds_count{handler="/v1/test/fail-next",method="POST"} 1.0

@@ -1,12 +1,12 @@
-trace be631550…25bf   total 201.5ms   spans 10
+trace d74a252e…cfa5   total 269.3ms   spans 10
 
-POST /v1/query         │████████████████████████████████████████████████│    201.5ms
-  gateway              │▊██████████████████████████████████████████████▉│    199.6ms
-    parse              │▍                                               │      1.5ms
-    entitlement        │▏                                               │      0.1ms
-    plan               │▏                                               │      0.1ms
-    federation         │▎██████████████████████████████████████████████ │    194.0ms
-      connector.github │▏█████████▊                                     │     41.6ms
-      connector.jira   │▏███████████████████████████████████████████▉   │    184.7ms
-      duckdb_join      │                                             ▉▉ │      7.6ms
+POST /v1/query         │████████████████████████████████████████████████│    269.3ms
+  gateway              │▌██████████████████████████████████████████████▉│    265.7ms
+    parse              │▌██▉                                            │     18.4ms
+    entitlement        │   ▏                                            │      1.1ms
+    plan               │    ▏                                           │      0.2ms
+    federation         │    ▉██████████████████████████████████████████▎│    242.4ms
+      connector.github │    ▌███████▋                                   │     45.2ms
+      connector.jira   │    ▌████████████████████████████████▊          │    186.4ms
+      duckdb_join      │                                     ▏█████████▎│     52.5ms
     assemble           │                                               ▏│      0.9ms
