@@ -14,6 +14,7 @@ factory. This matches HLD §8's ``src/gateway/`` intent.
 from __future__ import annotations
 
 import logging
+import time
 
 from fastapi import APIRouter, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
@@ -25,7 +26,7 @@ from src.gateway.deps import CurrentUser, Repository
 from src.models.envelope import QueryEnvelope
 from src.models.errors import InvalidQueryError
 from src.models.request import QueryRequest
-from src.observability.metrics import render_metrics
+from src.observability.metrics import observe_query, render_metrics
 from src.observability.tracing import current_trace_id, stage_span
 
 logger = logging.getLogger(__name__)
@@ -158,7 +159,17 @@ async def query(body: QueryRequest, user: CurrentUser, request: Request) -> Quer
         # the `empty` leg of the trichotomy, claimed falsely.
         raise RuntimeError("query pipeline is not configured on app.state")
 
-    return await runner.run(body, user, current_trace_id())
+    # Timed HERE, not inside the runner, and in a `finally` (ADR-040). A
+    # malformed query and an entitlement denial both raise before the pipeline
+    # produces an envelope, so a histogram fed from the runner would see only
+    # the requests that succeeded and would report a P95 better than the one
+    # callers actually experience — which is the exact failure mode a latency
+    # metric exists to prevent.
+    started = time.perf_counter()
+    try:
+        return await runner.run(body, user, current_trace_id())
+    finally:
+        observe_query(time.perf_counter() - started)
 
 
 @router.post("/v1/query/async", tags=["query"], status_code=status.HTTP_501_NOT_IMPLEMENTED)

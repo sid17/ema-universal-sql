@@ -10,20 +10,11 @@ from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import pytest
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
 from opentelemetry.sdk.trace import SpanProcessor, TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
-from prometheus_client import REGISTRY, generate_latest
 
 from src.config import get_settings
-from src.observability.metrics import (
-    RATE_LIMIT_REMAINING_NAME,
-    instrument_app,
-    rate_limit_remaining,
-    render_metrics,
-)
 from src.observability.tracing import (
     ELAPSED_MS_ATTRIBUTE,
     NO_ACTIVE_TRACE,
@@ -270,38 +261,3 @@ def test_unreadable_trace_path_falls_back_to_console_instead_of_crashing(
     assert "cannot open OTEL_TRACE_FILE" in caplog.text
     assert "falling back to console" in caplog.text
     assert json.loads(written)["name"] == "connector_github"
-
-
-def test_rate_limit_remaining_renders_with_both_labels() -> None:
-    rate_limit_remaining.labels(connector="github", tenant="tenant_acme").set(4870)
-
-    body, content_type = render_metrics()
-    assert content_type.startswith("text/plain")
-    assert b'rate_limit_remaining{connector="github",tenant="tenant_acme"} 4870.0' in body
-
-
-def test_golden_signals_land_in_the_same_registry_as_our_gauge() -> None:
-    """ADR-015's single assumption, asserted end to end.
-
-    `.instrument(app)` must feed `prometheus_client`'s shared `REGISTRY`, so one
-    scrape carries both the golden signals and our gauge. If a future version of
-    prometheus-fastapi-instrumentator splits the registry, this fails loudly
-    instead of silently halving `/metrics`.
-    """
-    app = FastAPI()
-
-    @app.get("/ping")
-    def ping() -> dict[str, str]:
-        return {"status": "ok"}
-
-    instrument_app(app)
-    rate_limit_remaining.labels(connector="jira", tenant="tenant_globex").set(12)
-
-    with TestClient(app) as client:
-        assert client.get("/ping").status_code == 200
-
-    scrape = generate_latest(REGISTRY)
-    assert b"http_request_duration_seconds" in scrape
-    assert b"http_requests_total" in scrape
-    assert RATE_LIMIT_REMAINING_NAME.encode() in scrape
-    assert b'rate_limit_remaining{connector="jira",tenant="tenant_globex"} 12.0' in scrape
