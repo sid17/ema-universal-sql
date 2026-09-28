@@ -25,6 +25,14 @@ capabilities:
     - created_at
     - updated_at
 
+  # Only non-string columns need declaring; everything else defaults to string.
+  # Phase 2 needs a type BEFORE it has a row to look at: the Arrow schema handed
+  # to duckdb.register must be explicit (an empty result infers zero columns and
+  # DuckDB refuses to register it), and QueryEnvelope.columns[].type is part of
+  # the response contract.
+  column_types:
+    number: integer
+
   key_columns:
     # REQUIRED, and injected into the path: there is no GitHub endpoint that
     # lists pull requests across every repository, so a fetch without `repo`

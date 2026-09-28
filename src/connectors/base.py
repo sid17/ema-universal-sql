@@ -85,6 +85,12 @@ class PaginationSpec:
         )
 
 
+#: The declared type of a column when the capability model does not name one.
+#: Every mock column except GitHub's ``number`` is textual, so this default is
+#: the common case rather than a guess.
+DEFAULT_COLUMN_TYPE = "string"
+
+
 @dataclass(frozen=True)
 class CapabilityModel:
     """What a source can be asked to do, as stored in ``connectors.capabilities``.
@@ -98,6 +104,19 @@ class CapabilityModel:
     key_columns: Mapping[str, ColumnCapability]
     sortable: tuple[str, ...]
     pagination: PaginationSpec
+    column_types: Mapping[str, str] = field(default_factory=dict)
+    """Declared type per column. Only non-``string`` columns need listing.
+
+    Added in Phase 2 for two consumers that both need a type *before* they have
+    a row to look at:
+
+    - the Arrow schema handed to ``duckdb.register`` must be explicit, because
+      ``pa.Table.from_pylist([])`` infers zero columns and DuckDB then refuses
+      to register the table at all (ADR-030). Inferring from rows would also let
+      one source register as ``int64`` on a request that returned data and
+      ``string`` on one that did not.
+    - ``QueryEnvelope.columns[].type`` (HLD §4).
+    """
 
     @classmethod
     def from_dict(cls, raw: Mapping[str, Any]) -> "CapabilityModel":
@@ -108,7 +127,12 @@ class CapabilityModel:
             },
             sortable=tuple(raw.get("sortable", ())),
             pagination=PaginationSpec.from_dict(raw["pagination"]),
+            column_types=dict(raw.get("column_types", {})),
         )
+
+    def type_of(self, column: str) -> str:
+        """The declared type of ``column``, defaulting to ``string``."""
+        return self.column_types.get(column, DEFAULT_COLUMN_TYPE)
 
     def required_columns(self) -> tuple[str, ...]:
         """Columns a fetch cannot omit a predicate for."""
