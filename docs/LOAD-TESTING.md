@@ -10,12 +10,12 @@
 | | Value |
 |---|---|
 | Workers | **8** uvicorn processes on a 12-core laptop |
-| Offered load | **500 QPS for 60s**, held constant across every scenario |
+| Offered load | **500 QPS for 60s** — the target profile. S2 and S4 were actually measured at 200 QPS/15s; [LOAD-RESULTS](LOAD-RESULTS.md) is authoritative per run |
 | Connector latency (simulated) | GitHub **40ms**, Jira **180ms** — fetched in parallel, so a miss has a ~180ms floor |
 | Connector quota | GitHub **5,000 req/hr per tenant** = **1.39 req/s** |
 | Tenants | **20** |
 | Dataset | **200 rows per source** after pushdown, `LIMIT 50` out |
-| Latency SLO | P50 < 500ms, P95 < 1.5s (brief line 35) |
+| Latency SLO | P50 < 500ms, P95 < 1.5s. The brief (line 35) scopes this to *single-source predicate-pushdown*; we hold the harder two-source join case to it anyway |
 
 A 10s warm-up runs before each scenario and is excluded from the reported numbers.
 
@@ -23,7 +23,8 @@ A 10s warm-up runs before each scenario and is excluded from the reported number
 
 ## 2. Where the time goes
 
-Per request, warm cache, 2-source join:
+**Component costs, measured in isolation.** These are not end-to-end request latencies — see the
+reconciliation below. Warm cache, 2-source join:
 
 | | Cost |
 |---|---|
@@ -33,7 +34,15 @@ Per request, warm cache, 2-source join:
 | **Total, cache hit** | **~5ms** |
 | **Total, cache miss** | **~200ms** — Jira's round trip, nothing else |
 
-**A miss costs 40× a hit.** That single ratio is why everything below is about the cache.
+**A miss costs ~40× a hit in component terms.** That ratio is why everything below is about the
+cache.
+
+**Reconciling this with the measured numbers.** End-to-end p50 for the same warm two-source join
+under load is **24.8ms** (S2, [LOAD-RESULTS §2](LOAD-RESULTS.md)), not ~5ms; the difference is
+HTTP, serialisation and queueing rather than query work. Measured miss-to-hit is **7.9×**
+(196.7ms / 24.8ms), not 40× — the fixed per-request overhead is paid by both paths, which
+compresses the ratio. Read this table to decide *where* to optimise; read LOAD-RESULTS for *what
+the system delivers*.
 
 ---
 
@@ -72,6 +81,26 @@ cardinality tested. We kept DuckDB anyway:
   would be 0.4% of the SLO.
 
 Revisit if a profile ever shows the join as the constraint. It currently isn't.
+
+### 3.3 The brief's join-strategy axis — and which half these numbers describe
+
+Brief line 69 asks for the join strategy to be documented as *federated on the fly* vs
+*short-lived materialization*. That is a **different axis** from §3.2's engine choice, and the full
+treatment — the signal table, four worked cases, adaptive spill — is
+[design-doc §4.4](design/design-doc.md). What matters for reading the numbers here:
+
+| Path | Designed | Built | Measured |
+|---|---|---|---|
+| **Federate on the fly** — fetch both post-pushdown sides, join in worker memory | yes | **yes** | every number in LOAD-RESULTS |
+| **Short-lived encrypted materialization** — per-tenant `ATTACH`, TTL ≤ N min | yes | **no** | nothing |
+
+So **no measurement in these documents describes the materialization path.** The 24.8ms p50 and the
+~400 req/s ceiling are properties of the federate-live path alone.
+
+Spilling is currently *hard-disabled* rather than implemented (`temp_directory=''`), which is the
+safe half of the design: a join that outgrows the per-tenant `memory_limit` fails loudly instead of
+writing tenant rows to disk in plaintext. The opt-in encrypted-spill path is tracked in
+[LOAD-NEXT-STEPS §4](LOAD-NEXT-STEPS.md).
 
 ---
 
@@ -116,7 +145,9 @@ fixtures are left untouched so no existing test changes meaning.
 
 ## 6. Scenarios
 
-All four at **500 QPS, 60s, 8 workers**. Only the marked variable changes.
+The intended profile is **500 QPS, 60s, 8 workers** for all four; only the marked variable changes.
+**What was run differs:** S2 and S4 were measured at 200 QPS/15s, and **S1 is specified but not
+built**. [LOAD-RESULTS](LOAD-RESULTS.md) states what each reported number came from.
 
 | | Scenario | Variable | Isolates | Why |
 |---|---|---|---|---|

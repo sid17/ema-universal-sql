@@ -147,14 +147,14 @@ queries across 8 workers scrape as `query_duration_seconds_count 25.0`, not ~3.
   response: 93.5–95.0% against an intended 95%.
 - **Degradation is honest.** Under saturation 306–382 requests returned `partial` with the affected
   source named — no silently truncated joins.
-- **The rate limiter never fired** at a 95% hit ratio (0 × 429), which is the point of §3.1's
-  arithmetic: 20 tenants at 95% keeps live fetches inside the per-tenant quota.
+- **The rate limiter never fired** at a 95% hit ratio (0 × 429), which is the point of
+  [LOAD-TESTING §3.1](LOAD-TESTING.md)'s arithmetic: 20 tenants at 95% keeps live fetches inside the per-tenant quota.
 
 ---
 
 ## 7. Next
 
-1. **Find the ~400 req/s concurrency limit.** Instrument the three suspects in §3. This is the
+1. **Find the ~400 req/s concurrency limit.** Instrument the three suspects in §4. This is the
    headline open item — the system is waiting on something bounded, and CPU says there is 5× the
    headroom to reclaim.
 2. **Explain run 1**, or stop reporting it. Either it is reproducible under conditions we have not
