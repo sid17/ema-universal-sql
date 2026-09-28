@@ -54,7 +54,8 @@ Two things, stated plainly rather than left for a reader to find:
 
 ## Run it
 
-**Needs Docker and `make`. Nothing else.**
+**Needs Docker and `make`.** The examples below pipe through `jq` for readability; drop it if you
+don't have it.
 
 ```bash
 cp .env.example .env
@@ -200,8 +201,3 @@ that process is legible rather than hidden:
 
 Every plan carries the decisions it took and the watch-outs it hit, so a reviewer can follow a
 feature from the decision that motivated it, through the spec, to the tasks that built it.
-
-## Repository access
-
-> **Open item.** Before submission, push and grant **read** to `souvik-sen@ema.co` and
-> `careers@ema.co`, then replace this block with the URL.
