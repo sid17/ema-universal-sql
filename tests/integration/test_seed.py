@@ -158,8 +158,11 @@ def test_policies_read_back_with_the_predicate_as_an_ast(repository):
     If this ever returns a string, the only way to apply it is concatenation —
     an injection surface, and unanalysable by the planner.
     """
-    policies = repository.get_policies("tenant_acme", ["jira"], ["issues"], ["support"])
-    rls = [p for p in policies if p["kind"] == "RLS"]
+    policies = repository.get_policies("tenant_acme", ["jira"], ["issues"])
+    # Selected by id, not by kind: `deny-jira-issues-auditor` is also kind=RLS
+    # (an RLS deny with no predicate means "deny every row of this resource"),
+    # so filtering on kind alone now matches two rows.
+    rls = [p for p in policies if p["policy_id"] == "rls-jira-assignee"]
     assert len(rls) == 1
     predicate = rls[0]["predicate"]
     assert isinstance(predicate, dict)
@@ -167,7 +170,7 @@ def test_policies_read_back_with_the_predicate_as_an_ast(repository):
 
 
 def test_the_cls_rule_masks_the_reporter_email(repository):
-    policies = repository.get_policies("tenant_acme", ["jira"], ["issues"], ["support"])
+    policies = repository.get_policies("tenant_acme", ["jira"], ["issues"])
     cls = [p for p in policies if p["kind"] == "CLS"]
     assert len(cls) == 1
     assert cls[0]["column_name"] == "reporter_email"

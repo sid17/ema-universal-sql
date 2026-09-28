@@ -6,6 +6,8 @@ with a message about the data, rather than surfacing later as a confusing
 entitlement bug.
 """
 
+from collections import Counter
+
 import pytest
 
 from src.connectors.mock_data import (
@@ -207,3 +209,48 @@ def test_jira_accessor_returns_copies_too():
 def test_repeated_calls_are_equal_but_independent():
     assert github_rows() == github_rows()
     assert github_rows()[0] is not github_rows()[0]
+
+
+# --- the deliberate tie (Phase 2, ADR-035) ---------------------------------
+
+
+def test_exactly_one_updated_value_is_duplicated():
+    """The ordering tiebreaker needs a tie to be exercised by.
+
+    HLD §9 fixes the result order at ``updated DESC, key ASC`` and explains why
+    the second term is not cosmetic: the result cursor is an offset, and an
+    offset over a non-total order skips or duplicates rows between pages.
+
+    Before Phase 2 this file had twenty distinct timestamps, so ``ORDER BY
+    updated DESC`` was already total and ``test_pagination`` would have passed
+    identically with the tiebreaker deleted — a test that could not fail. This
+    asserts the tie still exists, because the moment someone "tidies" the
+    timestamps the pagination test goes quietly green-forever.
+    """
+    counts = Counter(issue["updated"] for issue in JIRA_ISSUES)
+    tied = sorted(value for value, n in counts.items() if n > 1)
+    assert tied == ["2026-09-27T11:40:00Z"], (
+        "expected exactly one duplicated `updated` value; the tiebreaker test "
+        "depends on it. See ADR-035."
+    )
+
+
+def test_the_tie_sits_inside_alices_result():
+    """...and specifically inside the smallest persona result.
+
+    A tie among rows nobody's query returns would satisfy the test above while
+    still never being exercised by the demo. Both tied rows must be alice's, and
+    both must be ``In Progress`` — the two predicates the canonical query applies.
+    """
+    tied = [i for i in JIRA_ISSUES if i["updated"] == "2026-09-27T11:40:00Z"]
+    assert {i["key"] for i in tied} == {"SUP-13", "SUP-14"}
+    assert all(i["assignee"] == "alice" and i["status"] == "In Progress" for i in tied)
+
+
+def test_the_tie_did_not_move_any_persona_count():
+    """Changing a timestamp must not change which rows a persona owns."""
+    in_progress = [i for i in JIRA_ISSUES if i["status"] == "In Progress"]
+    by_assignee = Counter(i["assignee"] for i in in_progress)
+    assert by_assignee["alice"] == 3
+    assert by_assignee["bob"] == 1
+    assert by_assignee["carol"] == 1  # 1 issue, 0 joined rows: her only PR is closed

@@ -178,7 +178,52 @@ def seed_grants(conn, tenant_keys: dict[str, str]) -> tuple[int, int]:
                     secret_ref,
                 ),
             )
+
+        _revoke_grants_not_in_config(cur, grants)
+
     return len(grants), len(grants)
+
+
+def _revoke_grants_not_in_config(cur, grants: list[dict[str, Any]]) -> None:
+    """Delete grants (and their secrets) this config no longer declares.
+
+    Every other write here is an upsert, which makes re-seeding safe — but
+    upserts alone make the config *additive*, not authoritative: deleting a
+    grant from ``grants.yaml`` left the row in ``tenant_connector`` forever, so
+    the connector stayed queryable and the config file described a state the
+    database was not in.
+
+    That is a real gap rather than a tidiness point. Brief line 29 asks for
+    admin connector onboarding via config, and offboarding is the same
+    operation run backwards; a config-driven system where removal does nothing
+    is one where revoking access silently fails. It surfaced when
+    ``tenant_globex`` kept its Jira grant after the entry was removed, and
+    ``CONNECTOR_NOT_ENABLED`` stayed unreachable.
+
+    **Scoped to the tenants this file mentions**, so a seed run can never delete
+    grants belonging to a tenant it was not asked about.
+    """
+    declared = {(g["tenant_id"], g["connector_type"]) for g in grants}
+    tenants = sorted({g["tenant_id"] for g in grants})
+
+    rows = cur.execute(
+        "SELECT tenant_id, connector_type, secret_ref FROM tenant_connector "
+        "WHERE tenant_id = ANY(%s)",
+        (tenants,),
+    ).fetchall()
+
+    for tenant_id, connector_type, secret_ref in rows:
+        if (tenant_id, connector_type) in declared:
+            continue
+        cur.execute(
+            "DELETE FROM tenant_connector WHERE tenant_id = %s AND connector_type = %s",
+            (tenant_id, connector_type),
+        )
+        # The ciphertext goes too. Leaving it would keep a resolvable credential
+        # for a connector nobody may use — and offboarding that leaves the
+        # secret behind is not offboarding.
+        cur.execute("DELETE FROM secrets WHERE secret_ref = %s", (secret_ref,))
+        print(f"  revoked grant {tenant_id}/{connector_type} (no longer in config)")
 
 
 def seed_policies(conn, tenant_keys: dict[str, str]) -> int:
@@ -193,8 +238,16 @@ def seed_policies(conn, tenant_keys: dict[str, str]) -> int:
             kind = policy["kind"]
             if kind not in ("RLS", "CLS"):
                 raise SeedError(f"policy {policy['policy_id']!r} has unknown kind {kind!r}")
-            if kind == "RLS" and not policy.get("predicate"):
-                raise SeedError(f"RLS policy {policy['policy_id']!r} has no predicate")
+            effect = policy.get("effect", "allow")
+            if effect not in ("allow", "deny"):
+                raise SeedError(f"policy {policy['policy_id']!r} has unknown effect {effect!r}")
+            # An RLS *allow* with no predicate would allow everything while
+            # looking like a restriction — the worst kind of silent failure in an
+            # entitlement store, so it is refused. An RLS *deny* with no
+            # predicate is the opposite and is meaningful: "deny every row of
+            # this resource". The asymmetry is deliberate; see config/policies.yaml.
+            if kind == "RLS" and effect == "allow" and not policy.get("predicate"):
+                raise SeedError(f"RLS allow policy {policy['policy_id']!r} has no predicate")
             if kind == "CLS" and not policy.get("column_name"):
                 raise SeedError(f"CLS policy {policy['policy_id']!r} names no column")
 
@@ -216,7 +269,7 @@ def seed_policies(conn, tenant_keys: dict[str, str]) -> int:
                     policy["resource"],
                     kind,
                     policy["applies_to"],
-                    policy.get("effect", "allow"),
+                    effect,
                     Jsonb(predicate) if predicate else None,
                     policy.get("column_name"),
                     policy.get("mask"),

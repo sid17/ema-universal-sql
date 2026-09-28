@@ -32,6 +32,10 @@ moves 3 → 4 or 5 and the tests catch it. Without rows like these every predica
 in the canonical query is vacuously true, and a filter that does nothing is
 indistinguishable from one that works.
 
+**One ``updated`` value is deliberately duplicated.** ``SUP-13`` and ``SUP-14``
+share a timestamp, so the result ordering is non-total without its ``key ASC``
+tiebreaker (HLD §9). See the comment on that row.
+
 The rows are written as tuples against a column header rather than as literal
 dicts purely so each row fits on one readable line — the dicts below are what
 the adapters actually serve.
@@ -49,7 +53,17 @@ _JIRA_ROWS = [
     # --- alice: three In Progress, each with exactly one open PR in ema/core ---
     ("SUP-12", "In Progress", "alice", "dana@acme.com", "SUP", "2026-09-27T14:05:00Z"),
     ("SUP-13", "In Progress", "alice", "evan@acme.com", "SUP", "2026-09-27T11:40:00Z"),
-    ("SUP-14", "In Progress", "alice", "fiona@acme.com", "SUP", "2026-09-26T16:20:00Z"),
+    # SUP-14 shares SUP-13's `updated` DELIBERATELY. HLD §9 makes the result
+    # ordering `updated DESC, key ASC`, and the tiebreaker is not cosmetic: the
+    # result cursor is an offset, and an offset over a non-total order skips or
+    # duplicates rows between pages. Every other timestamp in this file is
+    # distinct, so without this tie the pagination test would page through a
+    # totally-ordered set and could never exercise the tiebreaker at all.
+    # The tie sits inside alice's three In-Progress issues on purpose: the
+    # smallest persona result, so the headline demo exercises it rather than
+    # some synthetic case. Changing a timestamp changes no row's MEMBERSHIP in
+    # any persona's result, so alice 3 / bob 1 / carol 0 is untouched.
+    ("SUP-14", "In Progress", "alice", "fiona@acme.com", "SUP", "2026-09-27T11:40:00Z"),
     # alice also has non-In-Progress work, which must NOT appear.
     ("SUP-15", "Done", "alice", "grace@acme.com", "SUP", "2026-09-25T09:15:00Z"),
     ("SUP-16", "To Do", "alice", "henry@acme.com", "SUP", "2026-09-24T13:00:00Z"),

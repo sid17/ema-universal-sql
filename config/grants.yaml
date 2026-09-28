@@ -46,11 +46,18 @@ grants:
     status: active
     secret_ref: tenant_globex/github
 
-  - tenant_id: tenant_globex
-    connector_type: jira
-    enabled: true
-    status: active
-    secret_ref: tenant_globex/jira
+  # tenant_globex has NO Jira grant, deliberately.
+  #
+  # `CONNECTOR_NOT_ENABLED` is one of the six codes design-doc §8.1 publishes,
+  # and until this phase no seeded state could produce it — a declared code with
+  # no reachable path is a claim, not a feature. Running the canonical query
+  # (which reads `jira.issues`) as tenant_globex is now the one-line
+  # demonstration, and it exercises the gate at exactly the layer that should
+  # catch it: the parser, before anything is planned or fetched.
+  #
+  # This also makes globex a sharper isolation tenant: it holds a GitHub
+  # credential that must never decrypt with acme's key, AND it is missing a
+  # grant that acme has.
 
   # --- tenant_load: the k6 tenant -------------------------------------------
   - tenant_id: tenant_load
