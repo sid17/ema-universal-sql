@@ -6,10 +6,11 @@
 
 PY := .venv/bin/python
 RUFF := .venv/bin/ruff
-HEALTH_URL ?= http://localhost:8000/healthz
+BASE_URL ?= http://localhost:8000
+HEALTH_URL ?= $(BASE_URL)/healthz
 HEALTH_TIMEOUT ?= 90
 
-.PHONY: up down seed test test-integration test-mode e2e load demo fmt
+.PHONY: up down seed test test-integration test-mode e2e load demo trace scrape artifacts fmt
 
 ## up: build and start the stack, then wait until /healthz actually answers.
 # Polled, not slept: the submission gate times cold-to-serving, so the wait has
@@ -65,13 +66,52 @@ test-integration: test-mode
 test-mode:
 	TEST_MODE=1 docker compose up -d --wait --build app
 
+## trace: capture one live query and render the waterfall artifact.
+# Truncates the span log first, so the artifact provably describes the code that
+# is checked out rather than whatever accumulated across previous runs (ADR-045).
+# The renderer runs inside the app container — no host Python needed.
+trace:
+	./scripts/trace.sh
+
 ## e2e: Playwright browser specs. (Phase 3)
 e2e:
 	@echo "e2e: no-op — Playwright UI specs land in Phase 3."
 
-## load: k6 load profile, ~500-1k QPS for 60s. (Phase 4)
+## load: k6 at ~500 RPS for 60s, writing docs/k6-summary.txt.
+# Runs k6 from its own container (the `load` compose profile), so a fresh clone
+# needs only Docker — no host k6 binary. The sub-60s quickstart claim depends on
+# a reviewer never having to install anything.
+#
+# OTEL_EXPORTER=none for the duration of the run, then restored. Exporting ~500
+# spans/second to JSONL is measurement overhead on the very latency being
+# measured — a Phase 0 watch-out carried forward. The README says the number
+# excludes span export rather than letting it pretend otherwise. Restoring
+# afterwards matters because `make trace` needs the file sink back.
+#
+# `-` on the k6 line: a FAILED THRESHOLD IS A RESULT, not a build error. The
+# summary must still be written and the app must still be restored (ADR-044).
+RATE ?= 500
+DURATION ?= 60s
 load:
-	@echo "load: no-op — the k6 load profile lands in Phase 4."
+	@echo "recreating app with OTEL_EXPORTER=none (span export would distort the measurement)..."
+	OTEL_EXPORTER=none docker compose up -d --wait app
+	-RATE=$(RATE) DURATION=$(DURATION) docker compose --profile load run --rm k6
+	@echo "restoring the file span exporter..."
+	docker compose up -d --wait app
+	@echo "wrote docs/k6-summary.txt"
+
+## scrape: capture /metrics as a submission artifact.
+# Run it AFTER `make demo` or `make load`, or the histograms are empty and the
+# rate_limit_remaining gauge has no samples — the gauge is fed by a query.
+scrape:
+	curl -fsS $(BASE_URL)/metrics > docs/metrics-scrape.txt
+	@echo "wrote docs/metrics-scrape.txt ($$(wc -l < docs/metrics-scrape.txt) lines)"
+
+## artifacts: regenerate every reproducible submission artifact, in order.
+# demo first (it exercises the stack), then trace, then the scrape — which must
+# come last so it captures metrics the other two produced.
+artifacts: demo trace scrape
+	@ls -la docs/*.txt docs/*.svg
 
 ## demo: the scripted walkthrough, teed to docs/demo-output.txt.
 # Four calls covering four of the five hard parts with no UI and no observability
