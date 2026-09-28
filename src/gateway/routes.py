@@ -1,10 +1,10 @@
 """The HTTP surface.
 
-Phase 0 wires every route the prototype will ever expose, but ``/v1/query``
-returns an **envelope shell** — parsing, entitlement, planning and execution land
-in Phase 2. The point of doing it this way round is that the response contract
-exists and is already in use before anything fills it, so no later phase gets to
-invent its own shape.
+Phase 0 wired every route the prototype will ever expose and had ``/v1/query``
+return an **envelope shell**; Phase 2 filled it in. The point of doing it that
+way round is that the response contract existed and was already in use before
+anything produced it, so no later phase got to invent its own shape — and the
+diff that made the query real touches one function.
 
 Routes live here rather than in ``main.py`` because handlers are capped at 80
 lines and Phases 2, 3 and 4 each rewire one of them; ``main.py`` stays the app
@@ -19,9 +19,11 @@ from fastapi import APIRouter, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 
 from src.config import get_settings
+from src.connectors.errors import FailureMode
 from src.gateway.auth import mint_mock_token
 from src.gateway.deps import CurrentUser, Repository
 from src.models.envelope import QueryEnvelope
+from src.models.errors import InvalidQueryError
 from src.models.request import QueryRequest
 from src.observability.metrics import render_metrics
 from src.observability.tracing import current_trace_id, stage_span
@@ -49,6 +51,28 @@ class MockTokenRequest(BaseModel):
 
 class MockTokenResponse(BaseModel):
     token: str
+
+
+class FailNextRequest(BaseModel):
+    """Arm a one-shot connector failure. Test-only — see ``fail_next``."""
+
+    connector: str = Field(description="Connector type, e.g. 'jira'.")
+    mode: str = Field(
+        default="timeout",
+        description="One of: timeout, throttled, auth, not_enabled.",
+    )
+
+
+def _require_test_mode() -> None:
+    """404 unless ``TEST_MODE`` is on, so the route does not exist in a normal run.
+
+    Plain 404, NOT ``ErrorCode.ENTITLEMENT_DENIED``: HLD §9 reserves that code
+    for an explicit policy deny, and labelling a "route disabled" 404 with it
+    would pollute the six-code vocabulary the design doc shares. 404 rather than
+    403 for the same reason a disabled route should not advertise itself.
+    """
+    if not get_settings().TEST_MODE:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not Found")
 
 
 @router.get("/healthz", tags=["ops"])
@@ -109,19 +133,32 @@ def mock_token(body: MockTokenRequest) -> MockTokenResponse:
 
 @router.post("/v1/query", response_model=QueryEnvelope, tags=["query"])
 @stage_span("gateway")
-def query(body: QueryRequest, user: CurrentUser, request: Request) -> QueryEnvelope:
-    """Run a federated query. **Phase 0 returns the shell** — see the module docstring.
+async def query(body: QueryRequest, user: CurrentUser, request: Request) -> QueryEnvelope:
+    """Run a federated query through the five-stage pipeline.
 
-    The deadline attached here bounds the whole pipeline and becomes the parent
-    of the per-source budgets in Phases 1-2, so a slow connector degrades the
-    response to ``partial`` instead of hanging the request (brief line 84).
+    The handler resolves, calls and returns — deliberately. Every decision worth
+    making lives in :class:`~src.pipeline.runner.QueryPipelineRunner`, so the
+    stage order is stated once and cannot drift between this route, the tests
+    and ``make demo``. (It also keeps the handler well inside the 80-line cap.)
+
+    The deadline attached here bounds the whole pipeline and is the parent of
+    the per-source budgets the federation engine enforces, so a slow connector
+    degrades the response to ``partial`` instead of hanging the request
+    (brief line 84). Phase 0 set this value and nothing read it; it is read now.
     """
     settings = get_settings()
     # NOTE: request.state.user is set by get_current_user (deps.py) — identity
     # is assigned in exactly one place.
     request.state.deadline_ms = settings.REQUEST_TIMEOUT_MS
 
-    return QueryEnvelope(trace_id=current_trace_id())
+    runner = getattr(request.app.state, "runner", None)
+    if runner is None:
+        # A wiring bug, not a caller problem. Returning an empty envelope would
+        # be indistinguishable from a query that legitimately matched nothing —
+        # the `empty` leg of the trichotomy, claimed falsely.
+        raise RuntimeError("query pipeline is not configured on app.state")
+
+    return await runner.run(body, user, current_trace_id())
 
 
 @router.post("/v1/query/async", tags=["query"], status_code=status.HTTP_501_NOT_IMPLEMENTED)
@@ -141,6 +178,37 @@ def query_async() -> dict[str, str]:
     }
 
 
+@router.post("/v1/test/fail-next", tags=["ops"])
+def test_fail_next(body: FailNextRequest, request: Request) -> dict[str, str]:
+    """Make the next fetch of one connector fail. Test-only; 404 unless ``TEST_MODE``.
+
+    This is what makes "a source times out, the answer degrades to partial"
+    (brief line 84) demonstrable on demand rather than only during a real
+    outage. `make demo` uses it for its fourth call, and
+    ``tests/integration/test_timeout_partial.py`` for the DoD §2 gate.
+
+    One-shot: the request after this one behaves normally, so a demo can show
+    the recovery as well as the failure.
+    """
+    _require_test_mode()
+
+    try:
+        mode = FailureMode(body.mode)
+    except ValueError as exc:
+        raise InvalidQueryError(
+            f"unknown failure mode {body.mode!r}; "
+            f"expected one of {', '.join(m.value for m in FailureMode)}",
+            detail="FailureMode",
+        ) from exc
+
+    runner = getattr(request.app.state, "runner", None)
+    if runner is None:
+        raise RuntimeError("query pipeline is not configured on app.state")
+    runner.registry.fail_next(body.connector, mode)
+
+    return {"status": "armed", "connector": body.connector, "mode": mode.value}
+
+
 @router.post("/v1/test/reset", tags=["ops"])
 def test_reset(request: Request, repository: Repository) -> dict[str, str]:
     """Flush Redis and drop cached control-plane reads. Test-only.
@@ -151,11 +219,7 @@ def test_reset(request: Request, repository: Repository) -> dict[str, str]:
     without the cache drop, a re-seed would keep serving the old seed for up to
     ``CONTROL_PLANE_TTL_MS``.
     """
-    if not get_settings().TEST_MODE:
-        # Plain 404, NOT ErrorCode.ENTITLEMENT_DENIED: HLD §9 reserves that code
-        # for an explicit policy deny. Labelling a "route disabled" 404 with it
-        # would pollute the six-code vocabulary the design doc shares.
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not Found")
+    _require_test_mode()
 
     redis_client = getattr(request.app.state, "redis", None)
     if redis_client is None:

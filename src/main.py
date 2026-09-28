@@ -19,17 +19,25 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 import redis as redis_lib
+import redis.asyncio as redis_async
 from fastapi import FastAPI
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 
 from src.config import get_settings
 from src.control_plane.db import create_pool, run_migrations
 from src.control_plane.repository import ControlPlaneRepository
+from src.execution.assemble import ResultAssembler
 from src.gateway.handlers import install_error_handlers
 from src.gateway.routes import router
+from src.governance.audit import AuditLogger
+from src.governance.cache import FreshnessCacheManager
+from src.governance.ratelimit import TokenBucketRateLimiter
+from src.governance.secrets import SecretsManagerClient
 from src.observability.logging import RequestLogMiddleware, configure_logging
 from src.observability.metrics import instrument_app
 from src.observability.tracing import configure_tracing
+from src.pipeline.registry import ConnectorRegistry
+from src.pipeline.runner import QueryPipelineRunner
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +62,29 @@ def _warn_on_default_secret(settings) -> None:
         )
 
 
+def _build_runner(settings, pool, redis_pipeline, repository) -> QueryPipelineRunner:
+    """Assemble the pipeline once, here, and nowhere else.
+
+    Every collaborator below is shared for the life of the process: one cache,
+    one token bucket, one secrets client. Constructing them per request would
+    give each request its own Redis script registration and would make the
+    bucket's "per tenant, per connector" guarantee depend on which request
+    happened to run — the governance primitives are only correct because they
+    are shared.
+    """
+    cache = FreshnessCacheManager(redis_pipeline, ttl_ms=settings.CACHE_TTL_MS)
+    limiter = TokenBucketRateLimiter(redis_pipeline)
+    secrets = SecretsManagerClient(repository)
+    registry = ConnectorRegistry(repository, cache, limiter, secrets)
+    return QueryPipelineRunner(
+        registry=registry,
+        repository=repository,
+        assembler=ResultAssembler(limiter, repository),
+        audit=AuditLogger(pool),
+        deadline_ms=settings.REQUEST_TIMEOUT_MS,
+    )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Open the backing stores, migrate, and expose both on ``app.state``."""
@@ -64,16 +95,32 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     applied = run_migrations(pool)
     logger.info("migrations applied: %s", applied or "none (schema current)")
 
+    # TWO Redis clients, deliberately.
+    #
+    # `redis_client` is synchronous and serves the two places that must work
+    # from a sync route: /healthz's ping and /v1/test/reset's flushdb. Making
+    # those async would put a blocking psycopg call (healthz also checks
+    # Postgres) onto the event loop, which is worse than a second connection.
+    #
+    # `redis_pipeline` is the async client every governance primitive uses —
+    # the token bucket awaits its Lua script and the freshness cache awaits its
+    # GET/SET. One extra connection per process is cheap; mixing sync calls into
+    # the request path would not be.
     redis_client = redis_lib.from_url(settings.REDIS_URL, decode_responses=True)
     redis_client.ping()
+    redis_pipeline = redis_async.from_url(settings.REDIS_URL, decode_responses=False)
+
+    repository = ControlPlaneRepository(pool)
 
     app.state.pool = pool
     app.state.redis = redis_client
-    app.state.repository = ControlPlaneRepository(pool)
+    app.state.repository = repository
+    app.state.runner = _build_runner(settings, pool, redis_pipeline, repository)
 
     try:
         yield
     finally:
+        await redis_pipeline.aclose()
         redis_client.close()
         pool.close()
 
