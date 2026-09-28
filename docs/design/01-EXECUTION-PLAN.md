@@ -30,6 +30,39 @@ Two things sit outside this spine and are easy to lose:
 
 ---
 
+## Scope ledger — what each phase buys, and what's left
+
+Read this to answer *"where am I and what's remaining?"* without re-reading five specs. Tiers are from
+[`02-DEFINITION-OF-DONE.md`](./02-DEFINITION-OF-DONE.md) §3.
+
+| Phase | Delivers | Tier | Gate (how you know it's done) | Blocks |
+|---|---|---|---|---|
+| **0** | AST spike · compose+Makefile · contract models · JWT auth · control-plane read layer · migrations · README skeleton | **MUST** | spike prints a correct predicate split; `make up` healthy; 401 vs 200 shell | everything |
+| **1** | 2 mock adapters · capability models · token bucket (+burst) · freshness cache · Fernet secrets · YAML seed | **MUST** | 7 unit tests green; cross-tenant cache isolation holds | P2 |
+| **2** | parse → entitle → plan → execute · DuckDB join · envelope assembly · audit · **`make demo`** | **MUST** | canonical query entitled end-to-end; alice 3 / bob 1; timeout → partial; trichotomy distinct | P3, P4 |
+| **3** | query console · Playwright specs · console screenshot | **SHOULD** | 6 specs green headless | nothing |
+| **4** | OTel spans · `/metrics` · k6 load · README completion · artifacts | **MUST** (k6, metric, trace, README) | trace waterfall readable; k6 summary; fresh clone `make up` < 60s | submission |
+
+**Phases 3 and 4 are independent of each other** — both need only Phase 2. That matters, because as numbered the
+plan does the SHOULD-tier phase *before* the phase holding four MUST-tier deliverables. If time gets tight,
+**do Phase 4 before Phase 3.** The console is the nicest way to show the work; the trace screenshot, the k6 run,
+the Prometheus metric and the README are the ones the brief actually requires (lines 160–161, 166–167).
+`make demo` from Phase 2 already covers the "show me it working" need without any UI.
+
+### If you only have N hours
+
+| Budget | Do | Result |
+|---|---|---|
+| ~4h | P0 + P1 | plumbing proven, nothing demoable — **not submittable** |
+| ~7h | P0 + P1 + P2 | `make demo` proves all five hard parts via curl; tests green. **Minimally submittable** |
+| ~9h | + P4 | every MUST met: k6, metric, trace, README, screenshot. **Properly submittable** |
+| ~12h | + P3 | console + Playwright. The version that demos well |
+| more | COULD list | ETag/304, nested buckets, circuit breaker, crypto-shred (DoD §3) |
+
+Cut from the bottom. Never cut a MUST to reach a SHOULD.
+
+---
+
 ## Phase 0 — Scaffold & contracts  *(≈ hour 1–2)*
 **Spec:** [`phases/phase-0-scaffold.md`](./phases/phase-0-scaffold.md)
 

@@ -28,6 +28,9 @@ Concrete sqlglot usage (APIs runtime-verified — see `../research/prototype-pri
 - **Parse:** `sqlglot.parse_one(sql, read="duckdb", into=exp.Select)` (catch `ParseError` → `400`).
 - **Qualify FIRST (mandatory):** `tree = sqlglot.optimizer.qualify.qualify(tree, schema=<connector schemas>, dialect="duckdb")`. This stamps every `exp.Column` with its owning table/alias — *without it you cannot attribute a predicate to a source*, so every later stage depends on it. It also expands `*` and normalizes identifiers; pass the connector column schemas so `validate_qualify_columns` doubles as free validation.
 - **Subset validator = AST node-type whitelist:** walk the tree and reject any node outside {`Select, From, Join, Where, Order, Limit, Column, Table, Literal, EQ/NEQ/GT/…, And/Or, Alias`}. This catches `exp.Star` (reject `SELECT *`), `exp.Insert/Update/Delete/Create/Drop` (writes/DDL), arbitrary `exp.Func`, and subqueries — cleaner than string matching. Violation → top-level `400` (distinct from empty).
+  **Ordering matters and must be commented in the code:** the whitelist runs on the *user's* AST, before stage 3
+  injects `MD5(...)`. The entitlement engine's own nodes are trusted and never re-validated. Without that note a
+  reviewer reads the CLS `MD5` injection as violating this rule's own ban on arbitrary functions.
 - **Extract:** `tables` via `find_all(exp.Table)` mapped on **`(table.db, table.name)`** — note `github.pull_requests` parses as `.db='github'`, `.name='pull_requests'`, `.catalog=''` (map on db+name, NOT catalog); keep `.alias` for column attribution. `projection` from `tree.selects`; `predicates` by flattening `tree.find(exp.Where)`; `join_keys` from `exp.Join.args["on"]`; `order_by`/`limit` from `tree.args["order"]/["limit"]`.
 - Coarse gate here too: every referenced connector must be enabled for the tenant (`tenant_connector`), else `CONNECTOR_NOT_ENABLED`.
 
@@ -46,8 +49,20 @@ class ParsedQuery:
 ## Stage 3 — EntitlementEngine (`src/entitlement/engine.py`) — the crux
 - Fetch applicable policies once: `SELECT … FROM policies WHERE tenant_id=? AND connector_type = ANY(?) AND resource = ANY(? || '*') AND (applies_to = ANY(roles) OR applies_to='*') AND enabled`.
 - **RLS (concrete, pure-AST — no string concat):** resolve the JSONB predicate AST (`:user` → `UserContext.user_id`) into a sqlglot node and AND it into the plan via `tree.where(exp.EQ(this=exp.column("assignee","issue"), expression=exp.Literal.string(user)), append=True)` so it rides pushdown. Canonical: `jira.issues.assignee = <alice>`. `append=True` merges into any existing WHERE.
+  **What to assert, and where:** the AST carries a **literal** (`assignee = 'alice'`). `assignee = currentUser()`
+  is only how a *live* Jira adapter would render that predicate into JQL (design-doc §3.2) — it is a rendering
+  detail of one connector, not the plan. So assert at the adapter's received-predicates layer
+  (`predicates["assignee"] == "alice"`), never against a JQL string. The execution plan's Phase-2 prose says
+  `currentUser()`; that is the same fact one layer down.
 - **CLS (concrete):** for each CLS policy, rewrite the projection node in place — `proj.replace(exp.alias_(exp.func("MD5", exp.column("reporter_email","issue")), "reporter_email"))` for `hash`; `null`→`exp.Null()`; `redact`→a literal `'••••'`; `drop`→pop the column from `tree.selects` *and* from the source field request (column-pushdown saving). Wrapping in `exp.alias_` keeps the output column name stable. Register the mask on `(resource, column)`; `mask ∈ {null, hash, redact, drop}`.
-- **deny-overrides + default-deny:** if any matching policy `effect='deny'` on a resource, that resource yields empty; a resource with no matching `allow` for the user's roles → empty (not open).
+- **deny-overrides + default-deny — two different outcomes, deliberately:**
+  - An **explicit `effect='deny'`** matching a resource the query *references* → `403 ENTITLEMENT_DENIED`. The
+    caller asked for something they are forbidden to see; saying "zero rows" would be a lie, and it would leave
+    `ENTITLEMENT_DENIED` as a declared-but-unreachable code in the six-code vocabulary.
+  - **No matching `allow`** for the user's roles (default-deny) → **empty**, not 403 and not open. The caller
+    asked for something they simply have no grant for; an empty answer is the correct answer.
+  This split is what makes `ENTITLEMENT_DENIED` (design-doc §4.5) actually reachable, and it keeps the `empty`
+  leg of the trichotomy honest. Deny always overrides a matching allow.
 - **Join-key masking ordering:** if a masked column is also a join key, apply the mask only in the *final* projection (after the join), never before — or the join breaks.
 - Output: an `EntitledPlan` = `ParsedQuery` with RLS predicates merged in + a `masks` map + a `denied` set.
 
@@ -85,10 +100,19 @@ which violates LAW 1 (the pre-commit hook blocks it) and LAW 3. Split it:
 
 ### FederationEngine (`src/execution/federation.py`, DuckDB)
 - Call each adapter's `fetch(...)` (Phase 1) **in parallel** with the pushed predicates + `columns_to_fetch`; collect `AdapterResponse`s.
-- **Register + execute (concrete, validated by universql — Card 3):** open an in-memory DuckDB per request (`duckdb.connect(":memory:")`); convert each source's rows to a `pyarrow.Table` and `con.register("github_pull_requests", tbl)` / `con.register("jira_issues", tbl)`; run the residual query (join on `issue_key`, re-apply *every* residual filter authoritatively, `ORDER BY issue.updated DESC`, `LIMIT 50`, project entitled columns) over the registered names; `fetch_arrow_table()` back. `pyarrow.Table` is the internal currency (cheap to register and to serialize); `:memory:` + idempotent re-registration means no teardown.
-- Apply CLS masks in the final projection (`hash` → a stable hash; `null` → null; `redact` → `"••••"`; `drop` → column removed). Mask join keys here (post-join).
+- **Register + execute (concrete, validated by universql — Card 3):** open an in-memory DuckDB per request (`duckdb.connect(":memory:")`); convert each source's rows to a `pyarrow.Table` and `con.register("github_pull_requests", tbl)` / `con.register("jira_issues", tbl)`; run the residual query (join on `issue_key`, re-apply *every* residual filter authoritatively, `ORDER BY issue.updated DESC, issue.key ASC`, `LIMIT 50`, project entitled columns) over the registered names; `fetch_arrow_table()` back. `pyarrow.Table` is the internal currency (cheap to register and to serialize); `:memory:` + idempotent re-registration means no teardown.
+- **Masks are *not* re-applied here.** The CLS rewrite already happened in stage 3, in the projection AST, and is
+  expressed exactly once — this stage merely *executes* that AST, so `MD5(reporter_email) AS reporter_email` runs
+  as part of the final `SELECT`. That final SELECT is by definition post-join, which is what satisfies the
+  join-key masking rule (design-doc §3.2) without a second code path. The only thing this stage adds is
+  `ColumnMeta.masked = True` for every column in `EntitledPlan.masks`.
 - **freshness_ms** = `int((now − min(r.fetched_at for r in responses)) * 1000)` — the stalest contributor. If it exceeds `max_staleness_ms` and no refresh was possible → append a `STALE_DATA` warning.
-- **Pagination (functional req, take-home line 19):** after sort+limit, page the *joined result* — `next_cursor` is an opaque base64 offset over the sorted entitled rows (`{"offset": N}`); a follow-up request echoing the cursor returns the next window; `null` when exhausted. `LIMIT` is applied after the join (never pushed through it). Distinct from connector-level pagination, which lives in the adapters (Phase 1).
+- **Pagination (functional req, take-home line 19):** after sort+limit, page the *joined result* — `next_cursor`
+  is an opaque base64 offset over the sorted entitled rows (`{"offset": N}`); a follow-up request echoing the
+  cursor returns the next window; `null` when exhausted. **A tiebreaker is mandatory:** the sort must be
+  `updated DESC, key ASC`, because an offset cursor over a non-total order lets ties reorder between pages —
+  rows get skipped or duplicated and `test_pagination` flakes. **`next_cursor` is always `null` when
+  `partial=true`** — an offset into an incomplete result set is not stable, so we refuse to page it. `LIMIT` is applied after the join (never pushed through it). Distinct from connector-level pagination, which lives in the adapters (Phase 1).
 - **join_status / partial:** if a joined side's adapter returned a timeout → `partial=True`, `join_status="incomplete"`, warning `{code:SOURCE_TIMEOUT, connector}`; return the driving side's rows, **never** the un-joined set passed off as joined. A non-join multi-source scan with one side missing → `partial=True`, `join_status="n/a"`.
 - Assemble `QueryEnvelope`; **`AuditLogger` (`src/governance/audit.py`, built here)** writes one `audit_logs` row `{tenant, user, sources_accessed, rows_returned, trace_id, execution_ms}` — the compliance access-trail (design-doc §3.4).
 
@@ -105,10 +129,29 @@ which violates LAW 1 (the pre-commit hook blocks it) and LAW 3. Split it:
 - `test_projection_union_guard`: a query ordering by a non-projected column → that column is added to `columns_to_fetch` for the source.
 - `test_deny_overrides`: a `deny` policy on a resource → empty for that resource even if an allow also matches.
 - `test_canonical_alice`: end-to-end canonical query as alice → the known non-empty joined rows; `freshness_ms` = the stalest side; `join_status="complete"`.
-- `test_rls_shrinks_bob`: same query as bob → strictly fewer rows than alice (RLS visible); forbidden Jira rows never fetched.
+- `test_rls_shrinks_bob`: same query as bob → **exactly 1 row where alice got 3** (a count that shrinks but stays
+  non-zero is the legible RLS proof; a count that collapses to zero is indistinguishable from a broken query);
+  assert the Jira adapter received `predicates["assignee"] == "bob"`, so the forbidden rows were never fetched.
 - `test_timeout_partial`: force the Jira mock to time out → `partial=true`, `join_status="incomplete"`, `reason=SOURCE_TIMEOUT`, GitHub rows present, no un-joined passthrough.
-- `test_trichotomy`: one case each — empty (bob-with-no-matches), partial (timeout), error (malformed SQL) — asserting the three shapes are distinct.
-- `test_pagination`: a query with more joined rows than `LIMIT` returns a `next_cursor`; echoing it returns the next, non-overlapping window; the final window returns `next_cursor: null`.
+- `test_trichotomy`: one case each, asserting the three envelope shapes are distinct — **empty** (carol, who is
+  assigned nothing: `rows=[]`, `partial=false`, `join_status="complete"`, HTTP 200), **partial** (Jira forced to
+  time out), **error** (malformed SQL → HTTP 400, no envelope rows).
+- `test_staleness_knob`: the same query twice — `max_staleness_ms=0` then `60000`. First returns
+  `sources[].served == "live"` with `stats.connector_ms` populated; second returns `served == "cache"` with no
+  connector time and **no token spent** (assert `rate_limit_status.remaining` is unchanged). *Why this exists at
+  Phase 2:* freshness is 15% of the rubric, and its only other proof was the Phase-3 Playwright spec — which is
+  SHOULD-tier and disappears if the UI is cut. This keeps the freshness claim backed by a MUST-tier test.
+- `test_connector_gates`: a query naming a connector the tenant has not been granted → `403 CONNECTOR_NOT_ENABLED`;
+  a granted connector whose seeded secret fails to decrypt → `403 CONNECTOR_AUTH_ERROR`. These are the two gateway
+  codes in the six-code vocabulary and were the only ones with no test — a declared code with no test is a claim,
+  not a feature.
+- `test_pagination`: a query with more joined rows than `LIMIT` returns a `next_cursor`; echoing it returns the
+  next, **non-overlapping** window; the final window returns `next_cursor: null`. Seed at least two rows sharing
+  the same `updated` value, so the run fails if the `key` tiebreaker is missing.
+- `test_entitlement_denied`: a seeded `effect='deny'` policy on a referenced resource → `403 ENTITLEMENT_DENIED`
+  (**not** an empty 200) — this is what keeps the code reachable and distinguishes explicit deny from default-deny.
+- `test_cursor_null_when_partial`: force a timeout on a query whose result would otherwise page →
+  `partial=true` and `next_cursor is None`.
 
 ## `make demo` — the artifact insurance *(build it here, at this gate)*
 Both submission artifacts (console screenshot, trace waterfall) currently live in Phases 3 and 4, so a slip

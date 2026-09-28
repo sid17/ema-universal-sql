@@ -27,6 +27,22 @@ it as `tests/unit/test_ast_spike.py`) once Phase 2 lands the real thing.
 5. The **contract models** (`src/models/`) — the single source of truth for request/response/errors.
 6. `AuthContextExtractor` + `/v1/auth/mock-token`.
 7. Postgres migration runner + empty-schema migration (tables defined here, seeded in Phase 1/2).
+8. **`src/control_plane/repository.py` — the runtime read layer.** `src/control_plane/` is in the HLD §8 layout
+   and three later steps depend on it, but no phase owned it. It belongs here, with Phase 0's tenant gate as its
+   first consumer:
+
+   | Method | Read by | Phase |
+   |---|---|---|
+   | `get_tenant(tenant_id)` → status, residency, fernet_key | the tenant-status gate below | P0 |
+   | `get_tenant_connectors(tenant_id)` → enabled + secret_ref | `CONNECTOR_NOT_ENABLED` coarse gate | P2 |
+   | `get_capabilities(connector_type)` | `QueryPlanner` capability check | P2 |
+   | `get_policies(tenant_id, connectors, resources, roles)` | `EntitlementEngine` | P2 |
+   | `get_rate_limit_policy(tenant_id, connector_type)` | `TokenBucketRateLimiter` sizing | P1 |
+
+   Every method is **TTL-cached in process** (`CONTROL_PLANE_TTL_MS`, default 30 000) with an explicit
+   `invalidate()` used by `/v1/test/reset`. This is what makes HLD §3's *"read at request time (cached)"* true
+   rather than aspirational — without it every query pays 4–5 Postgres round-trips and the Phase-4 P95 is
+   Postgres, not Jira.
 
 ## Routes (this phase)
 | Method | Path | Behavior this phase |
@@ -137,7 +153,26 @@ CREATE TABLE audit_logs (
   trace_id TEXT, execution_ms INT, ts TIMESTAMPTZ DEFAULT now());
 ```
 
+## `README.md` — start it here, grow it every phase
+The README is brief deliverable **#4** (line 16) and a submission gate, but as originally planned it was written
+once, in Phase 4 — so any slip in the last phase loses a required deliverable outright. Instead, create it in
+Phase 0 with the section headings stubbed, and make *filling your section* part of each phase's gate:
+
+| Section | Filled by |
+|---|---|
+| Quickstart (`make up && make seed`) | P0 |
+| What it proves — the five hard parts, each with its command | P2 (after `make demo` exists) |
+| Trade-offs + join strategy (federated vs materialised — line 69) | P2 |
+| Prod-mapping of every non-goal (HLD §7) | P4 |
+| Screenshots + what they prove (line 52) | P4 |
+| Access granted to `souvik-sen@` / `careers@` | P4 |
+
+A README that grows with the code is also the only version that stays *true*; one written at the end describes
+what you meant to build.
+
 ## Acceptance tests (gate)
+- `tests/unit/test_control_plane.py`: a second call inside the TTL does **not** hit Postgres (assert the query
+  count); `invalidate()` forces a re-read.
 - `tests/unit/test_auth.py`: valid token → `UserContext` with right tenant/roles; expired → 401; wrong `aud` → 401.
 - `tests/integration/test_scaffold.py`: `/healthz` 200; `/v1/query` no token → 401; with minted token → 200 envelope shell with a non-empty `trace_id`.
 - Manual: `make up` cold → `/healthz` green in < 60s.

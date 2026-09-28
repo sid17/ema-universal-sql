@@ -52,7 +52,16 @@ class BaseConnectorAdapter(ABC):
                     limit: int) -> AdapterResponse: ...
 ```
 
-`fetch` is the single seam a future **live** adapter reimplements (HLD §7). Inside the mock it: (1) resolves the tenant secret via `SecretsManagerClient` (proves indirection), (2) consumes a token via the limiter, (3) checks the cache, (4) applies the pushed-down `predicates` to the in-memory dataset, (5) paginates, (6) records `served`/`fetched_at`/`etag`.
+`fetch` is the single seam a future **live** adapter reimplements (HLD §7). Inside the mock it runs these steps
+**in this order — the order is load-bearing**: (1) **check the freshness cache** — a hit returns immediately and
+spends **no** token; (2) consume a token via the limiter; (3) resolve the tenant secret via
+`SecretsManagerClient` (proves indirection); (4) apply the pushed-down `predicates` to the in-memory dataset;
+(5) paginate; (6) record `served`/`fetched_at`/`etag`.
+
+> **Cache before token, never token before cache.** Spending a token on a cache hit breaks three things at
+> once: the "`304` refreshes `fetched_at` without spending a token" guarantee below becomes false, the Phase-3
+> `rate_limit_banner` spec stops being deterministic, and the Phase-4 load run drains `tenant_acme`'s GitHub
+> bucket on request 6 instead of serving 30k requests from cache.
 
 ## Capability models (seed into `connectors.capabilities`)
 - **github.pull_requests:** `repo` {required, `=`} (path param), `state` {optional, `=`}, `author` {optional, `=`}; sortable `[created_at, updated_at]`; cursor pagination (Link-header style). Columns: `title, author, repo, state, issue_key, created_at, updated_at`.
@@ -67,9 +76,17 @@ A source's native failure is normalized through a **match→action table**, not 
 
 ## Seed datasets (deterministic — `src/connectors/mock_data.py`)
 - **GitHub** ~20 PRs in `ema/core`: fields `title, author, repo, state, issue_key, updated_at`. Ensure a stable subset is `state='open'` AND `issue_key` points at an `In Progress` Jira issue (so the canonical query has a known non-empty answer). Include some closed PRs and some pointing at non-in-progress issues (negative rows).
-- **Jira** ~20 issues: fields `key, status, assignee, reporter_email, project, updated`. `alice` assigned to e.g. `SUP-12, SUP-13`; `bob` assigned to none in `ema/core`'s linked set. Mix of `In Progress` / `Done` / `To Do`.
-- **Personas:** `alice` (role `support`), `bob` (role `support`). Both real users; RLS differentiates by `assignee`.
-- **Tenants:** `tenant_acme` (full seed) + `tenant_globex` (its own secret + a distinct cached row) — used only by the isolation test.
+- **Jira** ~20 issues: fields `key, status, assignee, reporter_email, project, updated`. Assignment is the RLS
+  demo, so make the three personas *visibly different, not empty-vs-nonempty*: `alice` → 3 `In Progress` issues
+  linked to open PRs (e.g. `SUP-12, SUP-13, SUP-14`), `bob` → exactly 1 (`SUP-21`), `carol` → 0. Mix of
+  `In Progress` / `Done` / `To Do` across the rest, each with a distinct `reporter_email`.
+- **Personas:** `alice`, `bob`, `carol` (all role `support`, all real users — RLS differentiates purely by
+  `assignee`). **alice 3 rows / bob 1 row** is the RLS demo: a row count that *shrinks* proves the filter, where
+  a count that drops to zero looks like a broken query. **carol 0 rows** is the separate `empty` leg of the
+  trichotomy (Phase 2).
+- **Tenants:** `tenant_acme` (full seed) + `tenant_globex` (its own secret + a distinct cached row, used only by
+  the isolation test) + `tenant_load` (same data as acme, but a large rate-limit budget — the k6 tenant; a 5-req
+  budget and a 500-QPS load test cannot coexist on one tenant).
 
 ## Seed configuration — `config/*.yaml` → Postgres
 Authoring format is **YAML, loaded by the seeder**, not hand-written `INSERT`s. Two reasons, both from the
@@ -92,10 +109,12 @@ INSERT INTO policies (policy_id, tenant_id, connector_type, resource, kind, appl
   '{"op":"eq","col":"assignee","value":":user"}');
 INSERT INTO policies (policy_id, tenant_id, connector_type, resource, kind, applies_to, effect, column_name, mask) VALUES
  ('cls-jira-reporter','tenant_acme','jira','issues','CLS','support','allow', 'reporter_email','hash');
--- budgets sized so a short test loop drains the bucket:
+-- Two budget profiles, because one cannot serve both demos:
 INSERT INTO rate_limit_policies VALUES
- ('tenant_acme','github', 5, 60, 2),    -- 5 req / 60s (Search-class-tight, for the 429 test)
- ('tenant_acme','jira',  30, 60, 5);
+ ('tenant_acme','github',    5,   60,  2),   -- deliberately tiny: drains in a short loop -> the 429 demo
+ ('tenant_acme','jira',     30,   60,  5),
+ ('tenant_load','github', 5000,   60, 500),  -- k6 tenant: must NOT throttle (see Phase 4)
+ ('tenant_load','jira',   5000,   60, 500);
 ```
 
 ## TokenBucketRateLimiter (`src/governance/ratelimit.py`)
@@ -106,7 +125,10 @@ INSERT INTO rate_limit_policies VALUES
 
 ## FreshnessCacheManager (`src/governance/cache.py`)
 - Key `cache:{tenant_id}:{entitlement_scope}:{connector}:{sha1(normalized_request)}`. **`tenant_id` + `entitlement_scope` are mandatory segments** — this is the entitlement trap; a test asserts they're present.
-- Value `{fetched_at, etag, data}` with TTL = the query's `max_staleness_ms` (bounded by a server max).
+- Value `{fetched_at, etag, data}` with a **fixed server TTL** (`CACHE_TTL_MS`, default 300 000) — *not* the
+  query's `max_staleness_ms`. TTL is a property of the **write**, staleness a property of the **read**: if a
+  `max_staleness_ms=0` request wrote a zero-TTL entry, no later request could ever get a cache hit, and the
+  Phase-3 freshness demo would be unreproducible. Staleness is enforced on read by `get()` below.
 - `get(key, max_staleness_ms)`: hit within staleness → return `served="cache"`. Stale-but-present → caller may issue a conditional request (mock supports `If-None-Match` → returns `304` when the seeded `etag` matches) which refreshes `fetched_at` **without** consuming a token. Miss/changed → caller does a live fetch.
 - Single-flight guard (asyncio lock per key) to collapse concurrent identical misses.
 
@@ -116,7 +138,12 @@ INSERT INTO rate_limit_policies VALUES
 
 ## Acceptance tests (gate)
 - `test_pagination`: `github_adapter.fetch(limit=5, page=None)` → 5 rows + `has_more=True` + a `next_cursor`; next page continues without overlap.
-- `test_bucket_drain`: consume past `max_requests` → `RATE_LIMIT_EXHAUSTED` with a positive `retry_after_ms`; `remaining()` reads 0.
+- `test_bucket_drain`: consume past `max_requests` → `RATE_LIMIT_EXHAUSTED` with a positive `retry_after_ms`;
+  `remaining()` reads 0.
+- `test_bucket_burst`: **the brief names burst explicitly (line 158), so it needs its own assertion.** With
+  `max_requests=5, burst=2`, a cold bucket admits `5+2` requests back-to-back (the burst allowance is spent
+  first), then throttles; after `window_sec/max_requests` of refill exactly one more is admitted. Without this
+  test `burst` is a column in a table, not a behaviour.
 - `test_cache_hit`: two fetches of the same request within TTL → second `served="cache"`, no token spent; after TTL → conditional request; matching etag → `304` refreshes `fetched_at`, still no token spent.
 - `test_cross_tenant_isolation`: seed a `tenant_globex` cache entry for the same normalized request → `tenant_acme` fetch does **not** read it (different key); assert the key contains both tenant + scope.
 - `test_secret_indirection`: `tenant_acme` GitHub fetch resolves `tenant_acme`'s token; a `tenant_globex` `secret_ref` decrypts to a different token; no cross-load.

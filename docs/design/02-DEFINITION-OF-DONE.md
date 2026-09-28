@@ -22,8 +22,8 @@ All six must be true. This is the brief's own checklist (lines 47–52, 163–16
 | 5 | One metrics/trace screenshot + a short note on what it proves | 52, 167 | `docs/trace-waterfall.png` + `docs/k6-summary.txt` + the README paragraph | P4 |
 | 6 | README: quickstart + rationale for key trade-offs | 16 | read it end-to-end once, out loud | P4 |
 
-**The reviewer test:** fresh clone → `make up && make seed` → open the console → Run → read the trace.
-If any step needs a human to explain it, gate 6 is not met.
+**The reviewer test:** fresh clone → `make up && make seed` → `make demo` → read the trace. (With Phase 3 built,
+substitute "open the console → Run" for `make demo`.) If any step needs a human to explain it, gate 6 is not met.
 
 ## 2. The five hard parts, each provable by one command
 
@@ -31,10 +31,10 @@ HLD §1 claims five things. A claim with no command behind it does not count. Th
 
 | # | Hard part | The one command / click | Passing looks like |
 |---|---|---|---|
-| 1 | Query-time RLS/CLS entitlement | `make demo` — or console: run as **alice**, then **bob** | Row count changes; `reporter_email` never appears raw; the Jira mock's received predicates include the RLS binding |
+| 1 | Query-time RLS/CLS entitlement | `make demo` — or console: run as **alice**, then **bob** | Row count goes **3 → 1** (shrinks, stays non-zero); `reporter_email` never appears raw; the Jira adapter received `assignee=<persona>`, so forbidden rows were never fetched |
 | 2 | Per-tenant fairness over rate limits | `make demo` drain step — or spam **Run** | `429 RATE_LIMIT_EXHAUSTED` + `Retry-After` + a `suggested_action` naming the async path. Never a hang |
 | 3 | Credential isolation | `pytest tests/unit/test_secrets.py` | Each tenant's `secret_ref` decrypts to its own token under its own Fernet key; no cross-load |
-| 4 | Entitlement-aware caching / freshness | console: `max_staleness_ms` 0 → 60000 | `sources[].served` flips `live` → `cache`; `freshness_ms` reports the **stalest** contributor |
+| 4 | Entitlement-aware caching / freshness | `pytest tests/integration/test_staleness_knob.py` — or console: `max_staleness_ms` 0 → 60000 | `sources[].served` flips `live` → `cache`, no token spent on the hit; `freshness_ms` reports the **stalest** contributor |
 | 5 | Connector reliability + honest degradation | `pytest tests/integration/test_timeout_partial.py` | `partial: true`, `join_status: incomplete`, GitHub rows present, un-joined rows never passed off as joined |
 
 **Plus the correctness point that is graded but easy to lose:** `pytest tests/integration/test_trichotomy.py`
@@ -70,7 +70,9 @@ they slip.
 
 - **UI console + Playwright specs.** The brief says *keep UI minimal* (62), so the console is a demo
   vehicle, not a requirement. It is still the fastest way for a reviewer to *see* four of the five hard
-  parts, and the screenshot artifact comes free.
+  parts, and the screenshot artifact comes free. **Ordering consequence:** Phase 3 builds this and is SHOULD-tier,
+  while Phase 4 holds four MUST-tier items and depends only on Phase 2 — so under time pressure run **Phase 4
+  before Phase 3** (see the scope ledger in `01-EXECUTION-PLAN.md`).
 - **Cross-tenant cache isolation test.** Cheap, and it is the sharpest security point available
   (Security is 15%).
 - **Result-level cursor pagination** over the joined rows, on top of the MUST-level `LIMIT`.

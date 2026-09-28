@@ -38,7 +38,7 @@ The prototype is the full design's data plane, collapsed into **one process** wi
 | Live SaaS connectors under real rate limits | **Mock connectors** with deterministic datasets + simulated pagination/latency/429 | Determinism for tests; no external flakiness; no Jira subscription needed. |
 | Per-tenant KMS key → crypto-shred | **Per-tenant Fernet key**; crypto-shred *described*, key-destroy *demonstrable in a test* | The mechanism (per-tenant key ⇒ key-destroy) is shown at prototype scale. |
 | Redis: distributed buckets + response cache + async jobs | **Redis**: token buckets + freshness cache (async path stubbed, see §7) | The two hot-path uses are real; async reroute is out of prototype scope. |
-| Short-lived DuckDB/Parquet spill, adaptive | **In-memory DuckDB** join every query | Federate-live is the common case; spill is asserted with one code seam, not exercised. |
+| Streaming hash-join by default, DuckDB/Parquet spill when bounds demand it (design §4.4) | **DuckDB `:memory:` for every join** | One engine stands in for both paths: `:memory:` *is* the in-memory join, and the spill seam is the `:memory:`→file swap. Collapsing them avoids writing two join engines to prove one idea — but say it plainly in the README, or the prototype reads as contradicting design §4.4's default path. |
 | k8s namespaces, Helm/Terraform, HPA, canary | **docker-compose**; scaling/topology *described* in README | Prototype proves behavior, not deployment. |
 
 **The invariants that survive the cut unchanged** (these are correctness, not scale): pushdown-as-optimization + the projection-union guard; entitlement compiled-in and pushed-down (never post-filter); transient/encrypted materialization; fail-fast with typed metadata; `freshness_ms = now − min(fetched_at)`.
@@ -94,7 +94,10 @@ LIMIT 50;
 
 - **Join** is a clean **equijoin** `pr.issue_key = issue.key` (not a fuzzy `title LIKE`). Mock PR rows carry a derived `issue_key` field; in production this is extracted from the PR branch/title (noted as a realism caveat, not built).
 - **RLS** (canonical): `jira.issues.assignee = :user` — pushed into JQL as `assignee = currentUser()`.
-- **CLS** (canonical): mask `jira.issues.reporter_email` (mask kinds: `null | hash | redact | drop`).
+- **CLS** (canonical): mask `jira.issues.reporter_email`, **`mask: hash`** (kinds: `null | hash | redact | drop`).
+  Note the canonical query above projects four columns and **none is `reporter_email`** — so the headline query
+  cannot itself show CLS. The console ships a second **CLS demo** preset (canonical + `issue.reporter_email`)
+  for that one proof; the canonical query stays exactly as design-doc §6.1 states it.
 - **Pushdown split**: GitHub gets `repo='ema/core' AND state='open'`; Jira gets `status='In Progress' AND assignee=currentUser() ORDER BY updated DESC`; the engine keeps only the join on `issue_key` + residual `LIMIT 50`.
 - **Pagination** (functional requirement): the SQL subset supports `LIMIT`; the caller pages the *joined result* with `next_cursor` (an opaque offset over the sorted, entitled rows). Connector-level pagination (Link-header / `startAt`) is separate and lives in the adapters (§3). Both are exercised.
 
@@ -135,7 +138,9 @@ For a join specifically: if Jira times out we **never** pass the un-joined GitHu
 ## 6. Seed data (deterministic, checked into the repo)
 
 - **Tenants:** `tenant_acme` (multi-tenant default). One tenant is enough to prove per-tenant keying; a second (`tenant_globex`) is seeded *only* to prove cache/credential isolation in a test.
-- **Users (JWT personas):** `alice` (assigned SUP-12, SUP-13) and `bob` (assigned nothing in `ema/core`) — the RLS demo is "alice sees rows, bob sees fewer/none."
+- **Users (JWT personas):** `alice` (3 in-scope issues), `bob` (**1**), `carol` (0). The RLS demo is
+  "alice sees 3, bob sees 1" — a count that *shrinks but stays non-zero*, because a count that drops to zero is
+  indistinguishable from a broken query. `carol` is the separate `empty` leg of the trichotomy (§5).
 - **GitHub mock:** ~20 PRs in `ema/core`, mix of open/closed, each with `issue_key` linking to a Jira issue (some to in-progress, some not).
 - **Jira mock:** ~20 issues, mix of statuses/assignees, each with a `reporter_email` (the CLS target).
 - **Policies (seeded):** the 1 RLS + 1 CLS rule above, as JSONB AST (design-doc §8.2 shape).
@@ -194,4 +199,16 @@ Every value below is fixed and must be identical across the design doc, this HLD
 - `effect` enum = `allow | deny` (deny-overrides, default-deny). `mask` enum = `null | hash | redact | drop`.
 - Policy predicate is a **JSONB AST**, never a raw SQL string.
 - `freshness_ms` = `now − min(fetched_at)` (the *stalest* contributor wins).
-- Error vocabulary = the six codes in §4; the first four are query-execution, the last two are gateway.
+- Error vocabulary = the six codes in §4 (= design-doc §8.1); the first four are query-execution, the last two
+  are gateway. `ENTITLEMENT_DENIED` = an **explicit** `deny` on a referenced resource; **default-deny** (no
+  matching allow) = `empty`, not 403.
+- **CLS mask kind = `hash`.** The UI renders any column with `masked=true` as `••••` *regardless of kind* and
+  never displays the masked value — with `hash` the value is an MD5 digest, so rendering off the value would
+  show a hash.
+- **Result ordering = `issue.updated DESC, issue.key ASC`.** The tiebreaker is not cosmetic: the pagination
+  cursor is an offset, and an offset over a non-total order skips or duplicates rows. `next_cursor` is `null`
+  whenever `partial=true`.
+- **Cache: fixed server TTL** (`CACHE_TTL_MS`), *not* the query's `max_staleness_ms`; staleness is enforced on
+  read. **Cache is checked before a token is spent** — a cache hit costs no rate-limit budget.
+- **Rate-limit budgets are per tenant:** `tenant_acme` is deliberately tiny (5 req/60s) to make the 429 demo
+  deterministic; `tenant_load` is large and is the only tenant k6 may target.
