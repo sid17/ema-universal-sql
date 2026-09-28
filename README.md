@@ -80,15 +80,15 @@ curl -s -X POST localhost:8000/v1/query -H "Authorization: Bearer $T" \
   "rows": [ ["Fix session expiry on refresh", "ana-dev", "SUP-12", "In Progress"],
             ["Retry webhook delivery",        "ben-dev", "SUP-13", "In Progress"],
             ["Paginate the audit export",     "ana-dev", "SUP-14", "In Progress"] ],
-  "freshness_ms": 197,
+  "freshness_ms": 195,
   "rate_limit_status": { "github": {"remaining": 6, "throttled": false},
                          "jira":   {"remaining": 34, "throttled": false} },
   "sources": [ {"connector": "github", "state": "ok", "served": "live"},
                {"connector": "jira",   "state": "ok", "served": "live"} ],
   "join_status": "complete", "partial": false, "next_cursor": null, "warnings": [],
-  "trace_id": "0895252fb518aab5280155ae7872901f",
-  "stats": { "parse_ms": 20.26, "entitlement_ms": 1.21, "plan_ms": 0.16,
-             "connector_ms": {"github": 46.17, "jira": 189.25} }
+  "trace_id": "046780b37b180370ebd71c778915be84",
+  "stats": { "parse_ms": 18.1, "entitlement_ms": 0.92, "plan_ms": 0.14,
+             "connector_ms": {"github": 46.6, "jira": 186.07} }
 }
 ```
 
@@ -113,24 +113,25 @@ pulling. `make test-integration` needs `make up` first.
 ![trace waterfall](docs/artifacts/trace/trace-waterfall.png)
 
 ```
-POST /v1/query         │████████████████████████████████████████████████│    204.6ms
-  gateway              │▊██████████████████████████████████████████████▉│    202.9ms
-    parse              │▍                                               │      1.5ms
+POST /v1/query         │████████████████████████████████████████████████│    208.5ms
+  gateway              │▊██████████████████████████████████████████████▊│    206.2ms
+    parse              │▌                                               │      1.9ms
     entitlement        │▏                                               │      0.1ms
-    plan               │▏                                               │      0.1ms
-    federation         │▍█████████████████████████████████████████████▊ │    196.5ms
-      connector.github │▎██████████▌                                    │     45.7ms
-      connector.jira   │▎███████████████████████████████████████████▌   │    186.5ms
-      duckdb_join      │                                            ▍█▊ │      8.7ms
-    assemble           │                                              ▎ │      0.9ms
+    plan               │▏                                               │      0.2ms
+    federation         │▏█████████████████████████████████████████████▊ │    199.2ms
+      connector.github │ ██████████▊                                    │     46.3ms
+      connector.jira   │ ███████████████████████████████████████████▎   │    187.5ms
+      duckdb_join      │                                            ▋█▋ │      9.8ms
+    assemble           │                                              ▎ │      1.0ms
 ```
 
-**What it proves.** Parse, entitlement, plan and assemble together are **2.6ms of 205ms — under
-1.3%**. Everything this prototype is *about* is free next to one remote call, which is the argument
-for doing entitlement at plan time. The two connector bars **overlap**, so the request costs
-`max(46, 187)` rather than the sum; the spans are opened inside the `asyncio.gather` closure
-precisely so that is visible. And `duckdb_join` starts only when the slower source finishes — a
-federated engine working correctly.
+**What it proves.** Parse, entitlement, plan and assemble together are **3.2ms of 208ms — about
+1.5%**. Everything this prototype is *about* — validating the SQL subset, compiling an RLS predicate
+and a CLS mask into the AST, splitting predicates by owning source — is free next to one remote
+call, which is the argument for doing entitlement at plan time. The two connector bars **overlap**,
+so the request costs `max(46, 188)` rather than the sum; the spans are opened inside the
+`asyncio.gather` closure precisely so that is visible. And `duckdb_join` starts only when the slower
+source finishes — a federated engine working correctly.
 
 There is no tracing backend: spans go to JSONL and `scripts/waterfall.py` renders them with the
 standard library. `make trace` warms the pool and truncates the log first, so the artifact describes

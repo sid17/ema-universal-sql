@@ -83,7 +83,7 @@
   Link: <https://api.github.com/repos/ema/core/pulls?cursor=eyJ2IjoxLCJzIjoiY3Vyc29yIiwibyI6M30>; rel="next"
   X-RateLimit-Limit: 5500
   X-RateLimit-Remaining: 5499
-  X-RateLimit-Reset: 1790611371
+  X-RateLimit-Reset: 1790613462
   X-RateLimit-Resource: core
 
   [
@@ -130,7 +130,7 @@
   ETag: W/"47ffed074039ac9b"
   X-RateLimit-Limit: 5500
   X-RateLimit-Remaining: 5499
-  X-RateLimit-Reset: 1790611372
+  X-RateLimit-Reset: 1790613462
 
   {
     "startAt": 0,
@@ -215,7 +215,7 @@
   HTTP/1.1 403
   X-RateLimit-Limit: 35
   X-RateLimit-Remaining: 0
-  X-RateLimit-Reset: 1790611444
+  X-RateLimit-Reset: 1790613534
   X-RateLimit-Resource: core
 
   {
@@ -226,7 +226,7 @@
   normalised for the caller:
     error_code    RATE_LIMIT_EXHAUSTED
     http          429
-    retry_after   402ms
+    retry_after   403ms
   GitHub answers 403 with the remaining count at zero; Jira answers 429 with a
   Retry-After. Both arrive here as RATE_LIMIT_EXHAUSTED — absorbing that
   difference is the connector's job.

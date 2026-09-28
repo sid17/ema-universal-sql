@@ -1,14 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="900" height="280" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="12">
 <rect width="900" height="280" fill="#0d1117"/>
-<text x="16" y="24" fill="#e6edf3" font-size="13">trace 5338dd32…581e   total 196.4ms</text>
-<text x="16" y="56" fill="#8b949e">POST /v1/query</text><rect x="240.0" y="46" width="570.0" height="13" rx="2" fill="#58a6ff"/><text x="820" y="56" fill="#8b949e">196.4ms</text>
-<text x="28" y="78" fill="#8b949e">gateway</text><rect x="244.2" y="68" width="563.3" height="13" rx="2" fill="#58a6ff"/><text x="820" y="78" fill="#8b949e">194.2ms</text>
-<text x="40" y="100" fill="#8b949e">parse</text><rect x="244.4" y="90" width="4.8" height="13" rx="2" fill="#58a6ff"/><text x="820" y="100" fill="#8b949e">1.7ms</text>
-<text x="40" y="122" fill="#8b949e">entitlement</text><rect x="249.4" y="112" width="2.0" height="13" rx="2" fill="#58a6ff"/><text x="820" y="122" fill="#8b949e">0.1ms</text>
-<text x="40" y="144" fill="#8b949e">plan</text><rect x="249.7" y="134" width="2.0" height="13" rx="2" fill="#58a6ff"/><text x="820" y="144" fill="#8b949e">0.1ms</text>
-<text x="40" y="166" fill="#8b949e">federation</text><rect x="250.2" y="156" width="547.4" height="13" rx="2" fill="#58a6ff"/><text x="820" y="166" fill="#8b949e">188.7ms</text>
-<text x="52" y="188" fill="#8b949e">connector.github</text><rect x="252.2" y="178" width="122.7" height="13" rx="2" fill="#f778ba"/><text x="820" y="188" fill="#8b949e">42.3ms</text>
-<text x="52" y="210" fill="#8b949e">connector.jira</text><rect x="252.3" y="200" width="531.1" height="13" rx="2" fill="#f778ba"/><text x="820" y="210" fill="#8b949e">183.0ms</text>
-<text x="52" y="232" fill="#8b949e">duckdb_join</text><rect x="784.1" y="222" width="13.2" height="13" rx="2" fill="#58a6ff"/><text x="820" y="232" fill="#8b949e">4.5ms</text>
-<text x="40" y="254" fill="#8b949e">assemble</text><rect x="797.8" y="244" width="2.0" height="13" rx="2" fill="#58a6ff"/><text x="820" y="254" fill="#8b949e">0.6ms</text>
+<text x="16" y="24" fill="#e6edf3" font-size="13">trace 515781c3…02ed   total 208.5ms</text>
+<text x="16" y="56" fill="#8b949e">POST /v1/query</text><rect x="240.0" y="46" width="570.0" height="13" rx="2" fill="#58a6ff"/><text x="820" y="56" fill="#8b949e">208.5ms</text>
+<text x="28" y="78" fill="#8b949e">gateway</text><rect x="243.7" y="68" width="563.9" height="13" rx="2" fill="#58a6ff"/><text x="820" y="78" fill="#8b949e">206.2ms</text>
+<text x="40" y="100" fill="#8b949e">parse</text><rect x="243.8" y="90" width="5.2" height="13" rx="2" fill="#58a6ff"/><text x="820" y="100" fill="#8b949e">1.9ms</text>
+<text x="40" y="122" fill="#8b949e">entitlement</text><rect x="249.3" y="112" width="2.0" height="13" rx="2" fill="#58a6ff"/><text x="820" y="122" fill="#8b949e">0.1ms</text>
+<text x="40" y="144" fill="#8b949e">plan</text><rect x="249.7" y="134" width="2.0" height="13" rx="2" fill="#58a6ff"/><text x="820" y="144" fill="#8b949e">0.2ms</text>
+<text x="40" y="166" fill="#8b949e">federation</text><rect x="250.3" y="156" width="544.6" height="13" rx="2" fill="#58a6ff"/><text x="820" y="166" fill="#8b949e">199.2ms</text>
+<text x="52" y="188" fill="#8b949e">connector.github</text><rect x="252.5" y="178" width="126.5" height="13" rx="2" fill="#f778ba"/><text x="820" y="188" fill="#8b949e">46.3ms</text>
+<text x="52" y="210" fill="#8b949e">connector.jira</text><rect x="252.6" y="200" width="512.6" height="13" rx="2" fill="#f778ba"/><text x="820" y="210" fill="#8b949e">187.5ms</text>
+<text x="52" y="232" fill="#8b949e">duckdb_join</text><rect x="767.5" y="222" width="26.9" height="13" rx="2" fill="#58a6ff"/><text x="820" y="232" fill="#8b949e">9.8ms</text>
+<text x="40" y="254" fill="#8b949e">assemble</text><rect x="795.3" y="244" width="2.9" height="13" rx="2" fill="#58a6ff"/><text x="820" y="254" fill="#8b949e">1.0ms</text>
 </svg>

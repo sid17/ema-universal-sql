@@ -70,8 +70,18 @@ test-mode:
 # Truncates the span log first, so the artifact provably describes the code that
 # is checked out rather than whatever accumulated across previous runs.
 # The renderer runs inside the app container — no host Python needed.
+# The PNG is derived from the SVG and only refreshes when a converter is on the
+# host. Skipping is not silent: an unrefreshed PNG would quietly disagree with
+# the .txt and .svg beside it, which is exactly the drift this warns about.
 trace:
 	./scripts/trace.sh
+	@if command -v rsvg-convert >/dev/null 2>&1; then \
+	  rsvg-convert -z 2 docs/artifacts/trace/trace-waterfall.svg \
+	    -o docs/artifacts/trace/trace-waterfall.png && echo "refreshed trace-waterfall.png"; \
+	else \
+	  echo "WARNING: rsvg-convert not found — trace-waterfall.png is NOT refreshed"; \
+	  echo "         and may now disagree with the .txt/.svg. brew install librsvg"; \
+	fi
 
 ## load: k6 at ~500 RPS for 60s, writing docs/artifacts/load/k6-summary.txt.
 # Runs k6 from its own container (the `load` compose profile), so a fresh clone

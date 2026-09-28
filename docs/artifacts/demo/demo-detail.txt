@@ -104,7 +104,7 @@
         "jon-dev"
       ]
     ],
-    "freshness_ms": 53,
+    "freshness_ms": 4,
     "rate_limit_status": {
       "github": {
         "remaining": 6,
@@ -122,24 +122,24 @@
     "partial": false,
     "next_cursor": "eyJ2IjoxLCJzIjoicmVzdWx0IiwibyI6NX0",
     "warnings": [],
-    "trace_id": "f352e93b6d6be3b2cdb96f3e416d1ff0",
+    "trace_id": "6d3bb18fb11e2afaacd20b78066172ca",
     "stats": {
-      "parse_ms": 19.0,
-      "entitlement_ms": 1.03,
-      "plan_ms": 0.17,
-      "federation_ms": 102.78,
+      "parse_ms": 2.05,
+      "entitlement_ms": 0.53,
+      "plan_ms": 0.16,
+      "federation_ms": 47.11,
       "connector_ms": {
-        "github": 47.79
+        "github": 42.74
       },
       "rows_examined": 6,
-      "assemble_ms": 0.66
+      "assemble_ms": 0.48
     }
   }
 
 --------------------------------------------------------------------------------
   SCENE 1.2 — the canonical two-source join
   expect: 200, join_status 'complete', both connectors in sources[]
-  note:   design-doc §6.1 verbatim; this is the query every other scene varies
+  note:   the canonical query every other scene varies
 --------------------------------------------------------------------------------
   caller: user=alice role=support tenant=tenant_acme scopes=(default)
   POST /v1/query
@@ -199,7 +199,7 @@
         "In Progress"
       ]
     ],
-    "freshness_ms": 148,
+    "freshness_ms": 203,
     "rate_limit_status": {
       "github": {
         "remaining": 5,
@@ -226,18 +226,18 @@
     "partial": false,
     "next_cursor": null,
     "warnings": [],
-    "trace_id": "4277b62e46194e6294182f0712a0001d",
+    "trace_id": "8644a5bd2654a3fd4e29c815f0f20530",
     "stats": {
-      "parse_ms": 2.67,
-      "entitlement_ms": 0.6,
-      "plan_ms": 0.13,
-      "federation_ms": 191.69,
+      "parse_ms": 17.86,
+      "entitlement_ms": 0.97,
+      "plan_ms": 0.14,
+      "federation_ms": 250.52,
       "connector_ms": {
-        "github": 42.87,
-        "jira": 184.4
+        "github": 45.7,
+        "jira": 186.17
       },
       "rows_examined": 3,
-      "assemble_ms": 0.71
+      "assemble_ms": 0.84
     }
   }
 
@@ -280,7 +280,7 @@
         "Plan the residency migration"
       ]
     ],
-    "freshness_ms": 5,
+    "freshness_ms": 3,
     "rate_limit_status": {
       "github": {
         "remaining": 4,
@@ -298,17 +298,17 @@
     "partial": false,
     "next_cursor": "eyJ2IjoxLCJzIjoicmVzdWx0IiwibyI6Mn0",
     "warnings": [],
-    "trace_id": "50dc6b2f977a7c742b0a2259b132a08e",
+    "trace_id": "0e1e3080f35a01e77e74cbdd7ede34c6",
     "stats": {
-      "parse_ms": 3.24,
-      "entitlement_ms": 0.93,
-      "plan_ms": 0.1,
-      "federation_ms": 53.29,
+      "parse_ms": 1.5,
+      "entitlement_ms": 0.02,
+      "plan_ms": 0.09,
+      "federation_ms": 45.64,
       "connector_ms": {
-        "github": 48.24
+        "github": 42.32
       },
       "rows_examined": 3,
-      "assemble_ms": 0.71
+      "assemble_ms": 0.47
     }
   }
 
@@ -351,7 +351,7 @@
         "Spike: queue backpressure"
       ]
     ],
-    "freshness_ms": 261,
+    "freshness_ms": 164,
     "rate_limit_status": {
       "github": {
         "remaining": 4,
@@ -369,15 +369,15 @@
     "partial": false,
     "next_cursor": "eyJ2IjoxLCJzIjoicmVzdWx0IiwibyI6NH0",
     "warnings": [],
-    "trace_id": "202081ee407defe648c1140a1362dd71",
+    "trace_id": "461a5cfb7b44275813e27f9e4b075f62",
     "stats": {
-      "parse_ms": 19.15,
-      "entitlement_ms": 1.14,
-      "plan_ms": 0.13,
-      "federation_ms": 55.46,
+      "parse_ms": 2.48,
+      "entitlement_ms": 0.06,
+      "plan_ms": 0.22,
+      "federation_ms": 5.22,
       "connector_ms": {},
       "rows_examined": 5,
-      "assemble_ms": 1.41
+      "assemble_ms": 0.49
     }
   }
 
@@ -420,7 +420,7 @@
         "Draft the onboarding checklist"
       ]
     ],
-    "freshness_ms": 427,
+    "freshness_ms": 321,
     "rate_limit_status": {
       "github": {
         "remaining": 4,
@@ -438,30 +438,29 @@
     "partial": false,
     "next_cursor": "eyJ2IjoxLCJzIjoicmVzdWx0IiwibyI6Nn0",
     "warnings": [],
-    "trace_id": "c9ddbc2f2bf5ed61089d2d85277b0a9f",
+    "trace_id": "184946a192ebd2b03e14ea410935fc29",
     "stats": {
-      "parse_ms": 1.19,
-      "entitlement_ms": 0.03,
-      "plan_ms": 0.12,
-      "federation_ms": 3.82,
+      "parse_ms": 1.25,
+      "entitlement_ms": 0.91,
+      "plan_ms": 0.11,
+      "federation_ms": 3.36,
       "connector_ms": {},
       "rows_examined": 7,
-      "assemble_ms": 0.37
+      "assemble_ms": 0.4
     }
   }
 
 --------------------------------------------------------------------------------
-  1.4 — the policy config itself (brief line 154: "a minimal policy config
-        expressing one RLS rule and one column mask"). config/policies.yaml,
+  1.4 — the policy config itself: one RLS rule and one column mask.
+        config/policies.yaml,
         which is what §2 below turns on. Printed rather than described: the
         ask is to see the config, not only its effect.
 --------------------------------------------------------------------------------
-  | # The minimal policy config the brief asks for (line 154): one RLS rule and one
-  | # column mask, shipped as YAML in the repo exactly as design-doc §6.2/§8.2
-  | # promises. Loaded into `policies` by scripts/seed.py.
+  | # The minimal policy config: one RLS rule and one column mask, shipped as YAML
+  | # in the repo. Loaded into `policies` by scripts/seed.py.
   | #
-  | # The RLS predicate is stored as a JSONB **AST**, never as a SQL string
-  | # (ADR-008). A policy that is a string of SQL can only be applied by
+  | # The RLS predicate is stored as a JSONB **AST**, never as a SQL string.
+  | # A policy that is a string of SQL can only be applied by
   | # concatenating it into a query, which is both an injection surface and
   | # impossible to analyse; an AST can be compiled into the plan, pushed down to a
   | # source, and re-applied authoritatively by the engine.
@@ -490,7 +489,7 @@
   |   # `hash` rather than `drop` deliberately: the column still appears in the
   |   # result with a stable value, so a caller can group by it without ever
   |   # learning the address. Dropping it would change the result shape and make
-  |   # the mask invisible in the UI — the Phase 3 spec needs it visible.
+  |   # the mask invisible in the response, where it should be visible.
   |   - policy_id: cls-jira-reporter
   |     tenant_id: tenant_acme
   |     connector_type: jira
@@ -506,16 +505,16 @@
   |   # --- DENY: an explicit deny, which overrides any matching allow --------------
   |   # Two things this fixture exists to prove, and neither is provable without it:
   |   #
-  |   #   1. `ENTITLEMENT_DENIED` is REACHABLE. It is one of the six codes the design
-  |   #      doc publishes (§8.1); a declared code no seeded state can produce is a
-  |   #      claim, not a feature.
+  |   #   1. `ENTITLEMENT_DENIED` is REACHABLE. It is one of the six published error
+  |   #      codes; a declared code no seeded state can produce is a claim, not a
+  |   #      feature.
   |   #   2. deny-overrides is real. Give a token BOTH `support` (which the allow
   |   #      above matches) and `auditor` (which this matches) and the result must be
   |   #      403, not the allow winning.
   |   #
   |   # `kind: RLS` with `effect: deny` and NO predicate reads as "deny every row of
   |   # this resource". A predicate here would mean "deny these rows", which is a
-  |   # different and much subtler feature that nothing in the brief asks for (LAW 5).
+  |   # different and much subtler feature that nothing here needs.
   |   #
   |   # Scoped to a role no persona holds by default, so the canonical alice/bob/carol
   |   # demo is completely untouched. The tests mint their own `auditor` token.
@@ -637,18 +636,18 @@
     "partial": false,
     "next_cursor": null,
     "warnings": [],
-    "trace_id": "3971d68526378b506e2223a5a4abdcf3",
+    "trace_id": "0283725fb54648c1c86168d92da1aa46",
     "stats": {
-      "parse_ms": 2.83,
-      "entitlement_ms": 1.98,
-      "plan_ms": 0.19,
-      "federation_ms": 192.75,
+      "parse_ms": 2.5,
+      "entitlement_ms": 0.55,
+      "plan_ms": 0.13,
+      "federation_ms": 189.14,
       "connector_ms": {
-        "github": 47.54,
-        "jira": 187.36
+        "github": 44.03,
+        "jira": 183.89
       },
       "rows_examined": 3,
-      "assemble_ms": 0.71
+      "assemble_ms": 0.57
     }
   }
 
@@ -703,7 +702,7 @@
         "In Progress"
       ]
     ],
-    "freshness_ms": 151,
+    "freshness_ms": 145,
     "rate_limit_status": {
       "github": {
         "remaining": 5,
@@ -730,18 +729,18 @@
     "partial": false,
     "next_cursor": null,
     "warnings": [],
-    "trace_id": "25e089e63969c5b7ba17bbc2797f8a9a",
+    "trace_id": "4270469df15afdbd5f00c24afac240c2",
     "stats": {
-      "parse_ms": 1.75,
+      "parse_ms": 1.43,
       "entitlement_ms": 0.06,
-      "plan_ms": 0.13,
-      "federation_ms": 193.87,
+      "plan_ms": 0.11,
+      "federation_ms": 188.15,
       "connector_ms": {
-        "github": 42.2,
-        "jira": 184.74
+        "github": 42.79,
+        "jira": 182.95
       },
       "rows_examined": 1,
-      "assemble_ms": 0.97
+      "assemble_ms": 0.67
     }
   }
 
@@ -800,7 +799,7 @@
       }
     ],
     "rows": [],
-    "freshness_ms": 147,
+    "freshness_ms": 145,
     "rate_limit_status": {
       "github": {
         "remaining": 4,
@@ -827,18 +826,18 @@
     "partial": false,
     "next_cursor": null,
     "warnings": [],
-    "trace_id": "713d363e54b72a68e8846eb79a509a22",
+    "trace_id": "a090155a389ce474bbf13ddd893835cf",
     "stats": {
-      "parse_ms": 1.68,
+      "parse_ms": 1.47,
       "entitlement_ms": 0.06,
       "plan_ms": 0.12,
-      "federation_ms": 191.06,
+      "federation_ms": 190.11,
       "connector_ms": {
-        "github": 44.18,
-        "jira": 183.59
+        "github": 44.08,
+        "jira": 182.03
       },
       "rows_examined": 0,
-      "assemble_ms": 0.82
+      "assemble_ms": 0.8
     }
   }
 
@@ -941,18 +940,18 @@
     "partial": false,
     "next_cursor": null,
     "warnings": [],
-    "trace_id": "ac47167bfb37ed98eb1fc8f66d1aa526",
+    "trace_id": "96daae43d14899d33767430cf7f9ff79",
     "stats": {
-      "parse_ms": 3.03,
-      "entitlement_ms": 0.17,
-      "plan_ms": 0.21,
-      "federation_ms": 192.18,
+      "parse_ms": 3.79,
+      "entitlement_ms": 0.29,
+      "plan_ms": 0.26,
+      "federation_ms": 195.26,
       "connector_ms": {
-        "github": 45.06,
-        "jira": 185.8
+        "github": 47.29,
+        "jira": 188.64
       },
       "rows_examined": 3,
-      "assemble_ms": 0.79
+      "assemble_ms": 0.68
     }
   }
 
@@ -1022,7 +1021,7 @@
       }
     ],
     "rows": [],
-    "freshness_ms": 4,
+    "freshness_ms": 8,
     "rate_limit_status": {
       "github": {
         "remaining": 2,
@@ -1049,17 +1048,17 @@
     "partial": false,
     "next_cursor": null,
     "warnings": [],
-    "trace_id": "df187c4de15ab46b83f599e6bda6c2cc",
+    "trace_id": "37e008bd2cdc4e8105e44c9489142291",
     "stats": {
-      "parse_ms": 1.83,
-      "entitlement_ms": 1.06,
-      "plan_ms": 0.14,
-      "federation_ms": 49.31,
+      "parse_ms": 1.76,
+      "entitlement_ms": 0.12,
+      "plan_ms": 0.19,
+      "federation_ms": 55.85,
       "connector_ms": {
-        "github": 45.58
+        "github": 48.39
       },
       "rows_examined": 0,
-      "assemble_ms": 1.44
+      "assemble_ms": 0.88
     }
   }
 
@@ -1190,7 +1189,7 @@
         "jon-dev"
       ]
     ],
-    "freshness_ms": 5,
+    "freshness_ms": 6,
     "rate_limit_status": {
       "github": {
         "remaining": 6,
@@ -1208,17 +1207,17 @@
     "partial": false,
     "next_cursor": "eyJ2IjoxLCJzIjoicmVzdWx0IiwibyI6NX0",
     "warnings": [],
-    "trace_id": "77bb918cb3a2c786dcadde77d883e89b",
+    "trace_id": "c9e9c31e7ded76dd4b25ee514ea01f89",
     "stats": {
-      "parse_ms": 2.59,
-      "entitlement_ms": 0.57,
-      "plan_ms": 0.16,
-      "federation_ms": 47.72,
+      "parse_ms": 1.95,
+      "entitlement_ms": 1.27,
+      "plan_ms": 0.18,
+      "federation_ms": 48.46,
       "connector_ms": {
-        "github": 42.72
+        "github": 42.76
       },
       "rows_examined": 6,
-      "assemble_ms": 0.43
+      "assemble_ms": 0.55
     }
   }
 
@@ -1295,7 +1294,7 @@
         "jon-dev"
       ]
     ],
-    "freshness_ms": 54,
+    "freshness_ms": 7,
     "rate_limit_status": {
       "github": {
         "remaining": 5,
@@ -1313,17 +1312,17 @@
     "partial": false,
     "next_cursor": "eyJ2IjoxLCJzIjoicmVzdWx0IiwibyI6NX0",
     "warnings": [],
-    "trace_id": "67f3774bffef42f44a66ce9617b0d8ec",
+    "trace_id": "30dc9a5d3a7698c14f883f52b711b78d",
     "stats": {
-      "parse_ms": 21.63,
+      "parse_ms": 5.05,
       "entitlement_ms": 0.84,
-      "plan_ms": 0.14,
-      "federation_ms": 99.19,
+      "plan_ms": 0.19,
+      "federation_ms": 51.72,
       "connector_ms": {
-        "github": 43.33
+        "github": 44.7
       },
       "rows_examined": 6,
-      "assemble_ms": 0.68
+      "assemble_ms": 0.46
     }
   }
 
@@ -1400,7 +1399,7 @@
         "jon-dev"
       ]
     ],
-    "freshness_ms": 5,
+    "freshness_ms": 8,
     "rate_limit_status": {
       "github": {
         "remaining": 4,
@@ -1418,17 +1417,17 @@
     "partial": false,
     "next_cursor": "eyJ2IjoxLCJzIjoicmVzdWx0IiwibyI6NX0",
     "warnings": [],
-    "trace_id": "1c892cdb2652430bece096d145cd335e",
+    "trace_id": "628098690759bcf9c22241f2519a228e",
     "stats": {
-      "parse_ms": 1.62,
-      "entitlement_ms": 0.02,
-      "plan_ms": 0.14,
-      "federation_ms": 51.56,
+      "parse_ms": 3.32,
+      "entitlement_ms": 0.05,
+      "plan_ms": 0.24,
+      "federation_ms": 57.38,
       "connector_ms": {
-        "github": 46.97
+        "github": 49.7
       },
       "rows_examined": 6,
-      "assemble_ms": 0.55
+      "assemble_ms": 0.6
     }
   }
 
@@ -1505,7 +1504,7 @@
         "jon-dev"
       ]
     ],
-    "freshness_ms": 8,
+    "freshness_ms": 10,
     "rate_limit_status": {
       "github": {
         "remaining": 3,
@@ -1523,17 +1522,17 @@
     "partial": false,
     "next_cursor": "eyJ2IjoxLCJzIjoicmVzdWx0IiwibyI6NX0",
     "warnings": [],
-    "trace_id": "f3395adf7493284c85d558c5b00bda21",
+    "trace_id": "d11757f9e0643beaf0f6eb2d87e40ee8",
     "stats": {
-      "parse_ms": 2.7,
-      "entitlement_ms": 0.04,
-      "plan_ms": 0.22,
-      "federation_ms": 53.29,
+      "parse_ms": 3.04,
+      "entitlement_ms": 0.14,
+      "plan_ms": 0.26,
+      "federation_ms": 59.2,
       "connector_ms": {
-        "github": 44.88
+        "github": 50.16
       },
       "rows_examined": 6,
-      "assemble_ms": 0.48
+      "assemble_ms": 0.59
     }
   }
 
@@ -1610,7 +1609,7 @@
         "jon-dev"
       ]
     ],
-    "freshness_ms": 4,
+    "freshness_ms": 8,
     "rate_limit_status": {
       "github": {
         "remaining": 2,
@@ -1628,17 +1627,17 @@
     "partial": false,
     "next_cursor": "eyJ2IjoxLCJzIjoicmVzdWx0IiwibyI6NX0",
     "warnings": [],
-    "trace_id": "3b8bdd5aeeae5f7d2a40ad259aaf931c",
+    "trace_id": "cdcb688d8389b1bf161313c165334352",
     "stats": {
-      "parse_ms": 1.25,
-      "entitlement_ms": 0.02,
-      "plan_ms": 0.14,
-      "federation_ms": 47.75,
+      "parse_ms": 2.85,
+      "entitlement_ms": 0.03,
+      "plan_ms": 1.69,
+      "federation_ms": 57.7,
       "connector_ms": {
-        "github": 43.06
+        "github": 49.56
       },
       "rows_examined": 6,
-      "assemble_ms": 0.42
+      "assemble_ms": 0.52
     }
   }
 
@@ -1715,7 +1714,7 @@
         "jon-dev"
       ]
     ],
-    "freshness_ms": 8,
+    "freshness_ms": 6,
     "rate_limit_status": {
       "github": {
         "remaining": 1,
@@ -1733,17 +1732,17 @@
     "partial": false,
     "next_cursor": "eyJ2IjoxLCJzIjoicmVzdWx0IiwibyI6NX0",
     "warnings": [],
-    "trace_id": "1e07ed61bc4ac5a93b2c6bb0f3422dc3",
+    "trace_id": "7945361b09043e902ad821873c31b35d",
     "stats": {
-      "parse_ms": 1.98,
-      "entitlement_ms": 0.03,
-      "plan_ms": 0.2,
-      "federation_ms": 51.8,
+      "parse_ms": 2.59,
+      "entitlement_ms": 0.04,
+      "plan_ms": 0.24,
+      "federation_ms": 51.96,
       "connector_ms": {
-        "github": 44.26
+        "github": 45.89
       },
       "rows_examined": 6,
-      "assemble_ms": 0.6
+      "assemble_ms": 0.55
     }
   }
 
@@ -1820,7 +1819,7 @@
         "jon-dev"
       ]
     ],
-    "freshness_ms": 5,
+    "freshness_ms": 7,
     "rate_limit_status": {
       "github": {
         "remaining": 0,
@@ -1838,17 +1837,17 @@
     "partial": false,
     "next_cursor": "eyJ2IjoxLCJzIjoicmVzdWx0IiwibyI6NX0",
     "warnings": [],
-    "trace_id": "881ed13ae22cf5b975af9bedb8806dcd",
+    "trace_id": "da880924c086188bfef3ba4036c1a443",
     "stats": {
-      "parse_ms": 2.53,
-      "entitlement_ms": 0.04,
-      "plan_ms": 0.2,
-      "federation_ms": 48.24,
+      "parse_ms": 2.81,
+      "entitlement_ms": 0.05,
+      "plan_ms": 0.25,
+      "federation_ms": 50.65,
       "connector_ms": {
-        "github": 43.55
+        "github": 43.58
       },
       "rows_examined": 6,
-      "assemble_ms": 0.61
+      "assemble_ms": 1.09
     }
   }
 
@@ -1870,7 +1869,7 @@
   {
     "error_code": "RATE_LIMIT_EXHAUSTED",
     "message": "Rate limit exhausted for tenant 'tenant_acme' on connector 'github' (5 requests per 60s, burst 2). The source would answer 403.",
-    "retry_after_ms": 10616,
+    "retry_after_ms": 10707,
     "suggested_action": "Rate limit exhausted for this tenant. Retry after the window resets, or reroute this query to the async path: POST /v1/query/async"
   }
 
@@ -1984,17 +1983,17 @@
     "partial": false,
     "next_cursor": "eyJ2IjoxLCJzIjoicmVzdWx0IiwibyI6NX0",
     "warnings": [],
-    "trace_id": "9e379bcc07cd0fe618d4483a4fae5366",
+    "trace_id": "3f7e8b5008112eb6c9f2ff303d84f813",
     "stats": {
-      "parse_ms": 2.09,
-      "entitlement_ms": 0.41,
-      "plan_ms": 0.16,
-      "federation_ms": 46.55,
+      "parse_ms": 2.42,
+      "entitlement_ms": 0.42,
+      "plan_ms": 0.13,
+      "federation_ms": 45.88,
       "connector_ms": {
-        "github": 42.44
+        "github": 42.42
       },
       "rows_examined": 6,
-      "assemble_ms": 0.46
+      "assemble_ms": 0.33
     }
   }
   ^^ remember this rate_limit_status; 4.2 must match it exactly.
@@ -2073,7 +2072,7 @@
         "jon-dev"
       ]
     ],
-    "freshness_ms": 147,
+    "freshness_ms": 133,
     "rate_limit_status": {
       "github": {
         "remaining": 6,
@@ -2091,15 +2090,15 @@
     "partial": false,
     "next_cursor": "eyJ2IjoxLCJzIjoicmVzdWx0IiwibyI6NX0",
     "warnings": [],
-    "trace_id": "e29bf6700a89a6fa7c4271f4fd7a312c",
+    "trace_id": "fc0a4e126af30639c45994d7a54e93a0",
     "stats": {
-      "parse_ms": 1.32,
+      "parse_ms": 1.64,
       "entitlement_ms": 0.02,
-      "plan_ms": 0.14,
-      "federation_ms": 4.52,
+      "plan_ms": 0.13,
+      "federation_ms": 3.7,
       "connector_ms": {},
       "rows_examined": 6,
-      "assemble_ms": 0.47
+      "assemble_ms": 0.36
     }
   }
 
@@ -2177,7 +2176,7 @@
         "jon-dev"
       ]
     ],
-    "freshness_ms": 4,
+    "freshness_ms": 53,
     "rate_limit_status": {
       "github": {
         "remaining": 6,
@@ -2197,24 +2196,24 @@
     "warnings": [
       {
         "code": "STALE_DATA",
-        "message": "the stalest contributor is 4ms old, beyond the requested 1ms; no fresher data was available"
+        "message": "the stalest contributor is 53ms old, beyond the requested 1ms; no fresher data was available"
       }
     ],
-    "trace_id": "95fea5a157ed777224b742e0121e0ca1",
+    "trace_id": "6021d9331ec254fc8162a9b03506a7de",
     "stats": {
-      "parse_ms": 1.39,
-      "entitlement_ms": 0.02,
-      "plan_ms": 0.12,
-      "federation_ms": 4.56,
+      "parse_ms": 21.85,
+      "entitlement_ms": 0.78,
+      "plan_ms": 0.14,
+      "federation_ms": 56.11,
       "connector_ms": {},
       "rows_examined": 6,
-      "assemble_ms": 0.43
+      "assemble_ms": 1.7
     }
   }
 
 ################################################################################
 #  5. THE ERROR VOCABULARY
-#  design-doc §8.1: six codes, each with the call that produces it
+#  six codes, each with the call that produces it
 ################################################################################
 
 --------------------------------------------------------------------------------
@@ -2261,7 +2260,7 @@
       }
     ],
     "rows": [],
-    "freshness_ms": 5,
+    "freshness_ms": 6,
     "rate_limit_status": {
       "github": {
         "remaining": 6,
@@ -2294,17 +2293,17 @@
         "message": "jira: forced timeout (mock failure hook)"
       }
     ],
-    "trace_id": "69255d67ea1a7ff6f2acd7bb67ca99cb",
+    "trace_id": "733c2bef2d21645e32727b505490328d",
     "stats": {
-      "parse_ms": 2.82,
-      "entitlement_ms": 0.62,
-      "plan_ms": 0.12,
-      "federation_ms": 48.94,
+      "parse_ms": 2.54,
+      "entitlement_ms": 0.49,
+      "plan_ms": 0.14,
+      "federation_ms": 49.66,
       "connector_ms": {
-        "github": 44.15
+        "github": 44.31
       },
       "rows_examined": 0,
-      "assemble_ms": 1.16
+      "assemble_ms": 1.04
     }
   }
 
@@ -2382,7 +2381,7 @@
   Two failures are deliberately NOT in this vocabulary and carry their own
   types instead: 401 UnauthenticatedError (transport) and 400
   InvalidQueryError (request shape, §6 below). Diluting the six would
-  desync the prototype from the design doc it shares them with.
+  make a domain code mean "your request was malformed" instead.
 --------------------------------------------------------------------------------
 
 ################################################################################
@@ -2479,16 +2478,16 @@
   one aggregate, because "how long did Jira take" is the question the brief's
   trace requirement is actually asking.
 --------------------------------------------------------------------------------
-  connector_fetch_duration_seconds_sum{connector="github"} 0.986238126992248
+  connector_fetch_duration_seconds_sum{connector="github"} 1.0030063379963394
   connector_fetch_duration_seconds_count{connector="github"} 30.0
-  connector_fetch_duration_seconds_sum{connector="jira"} 1.493318790999183
+  connector_fetch_duration_seconds_sum{connector="jira"} 1.4834773330003372
   connector_fetch_duration_seconds_count{connector="jira"} 12.0
 --------------------------------------------------------------------------------
   rate_limit_remaining, one series per (tenant, connector):
   rate_limit_remaining{connector="github",tenant="tenant_acme"} 6.0
   rate_limit_remaining{connector="jira",tenant="tenant_acme"} 35.0
 --------------------------------------------------------------------------------
-  trace_id from scene 1.2: 4277b62e46194e6294182f0712a0001d
+  trace_id from scene 1.2: 8644a5bd2654a3fd4e29c815f0f20530
   The rendered waterfall for a run of that same query is committed at
   docs/artifacts/trace/ and regenerated by `make trace`. Spans go to
   traces/spans.jsonl; there is no tracing backend and no fourth container.
@@ -2502,14 +2501,7 @@
   artifact is already committed. Regenerate with `make load-mt`.
   Headline numbers from docs/artifacts/load/k6-summary.txt:
 --------------------------------------------------------------------------------
-    iterations completed  4975
-    iterations dropped    25040
-    requested iterations  ~30000 (500 x 60s)
-    dropped_iterations is reported because constant-arrival-rate SKIPS work it
-    cannot start. A run that drops half its iterations can still post a healthy
-    checks passed         7890 / 9980
-    PASS  checks{scenario:drain_bucket} rate==1.0
-    FAIL  http_req_duration{scenario:federated_query} p(95)<1500
+  (docs/artifacts/load/k6-summary.txt not present — run `make load`)
 --------------------------------------------------------------------------------
 
 
