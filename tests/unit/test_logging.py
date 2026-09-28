@@ -17,6 +17,7 @@ import pytest
 from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from src.models.context import UserContext
 from src.observability.logging import (
@@ -24,7 +25,7 @@ from src.observability.logging import (
     JsonFormatter,
     RequestLogMiddleware,
 )
-from src.observability.tracing import configure_tracing, current_trace_id
+from src.observability.tracing import configure_tracing, current_trace_id, reset_tracing
 
 
 @pytest.fixture
@@ -68,7 +69,12 @@ def build_app(*, authenticated: bool = True) -> FastAPI:
     def healthz():
         return {"status": "ok"}
 
-    FastAPIInstrumentor.instrument_app(app)
+    # Same reason as src/main.py: instrument against the provider we manage,
+    # not the OTel global. Without this the app under test is bound to whatever
+    # provider happened to be installed first in the session — which a preceding
+    # `reset_tracing()` has since shut down, leaving no recording span and an
+    # empty trace_id.
+    FastAPIInstrumentor.instrument_app(app, tracer_provider=configure_tracing())
     return app
 
 
@@ -161,3 +167,26 @@ def test_the_token_itself_is_never_logged(access_lines):
     rendered = json.dumps(access_lines())
     assert "super-secret-token-value" not in rendered
     assert "authorization" not in rendered.lower()
+
+
+def test_trace_correlation_survives_a_provider_reset(access_lines):
+    """Regression: the suite used to pass only by alphabetical luck.
+
+    `reset_tracing()` replaces the module provider and shuts the old one down,
+    but the OTel GLOBAL provider can only be set once per process — so after any
+    reset, the global points at a dead provider. An app instrumented without an
+    explicit `tracer_provider` binds to that dead global, produces no recording
+    span, and `current_trace_id()` returns "".
+
+    Before the fix this failed whenever `test_observability.py` ran first; it
+    passed in a default run purely because `test_logging` sorts earlier. Any new
+    test file, an `-k` filter or a parallel runner would have exposed it.
+    """
+    reset_tracing(InMemorySpanExporter())
+
+    client = TestClient(build_app())
+    response = client.get("/v1/thing")
+
+    logged = access_lines()[0]["trace_id"]
+    assert logged, "app was instrumented against a shut-down provider"
+    assert logged == response.json()["trace_id"]

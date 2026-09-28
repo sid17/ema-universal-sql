@@ -102,7 +102,16 @@ def create_app() -> FastAPI:
     # Exclude the polled ops routes from tracing, for the same reason the access
     # log skips them: compose healthchecks every few seconds would otherwise make
     # Phase 4's waterfall artifact almost entirely /healthz spans.
-    FastAPIInstrumentor.instrument_app(app, excluded_urls="healthz,metrics")
+    #
+    # `tracer_provider=` is not optional-but-tidy, it is load-bearing. Without
+    # it the instrumentor resolves the OTel GLOBAL provider, which can only be
+    # set once per process — so if anything set it before us, every server span
+    # would be created by a provider we do not own and do not export from, and
+    # `QueryEnvelope.trace_id` would silently stop correlating with the access
+    # log and spans.jsonl. Handing it our own provider makes that impossible.
+    FastAPIInstrumentor.instrument_app(
+        app, excluded_urls="healthz,metrics", tracer_provider=configure_tracing()
+    )
 
     return app
 
