@@ -143,6 +143,65 @@ is blocked) · `pytest -q tests/unit` commit gate · `ruff format` on every `.py
 
 ---
 
+## Sequential or parallel?
+
+**Verdict: go sequentially — 0 → 1 → 2 → 4 → 3 — but front-load observability.** The reasoning matters more than
+the answer, because the phases *are* separable and it is worth knowing why we're not exploiting that.
+
+### The phases are cleanly separable by directory
+
+Extracted from the specs, file ownership barely overlaps:
+
+| Phase | Owns |
+|---|---|
+| 0 | `docker-compose.yml` · `Makefile` · `pyproject.toml` · `001_init.sql` · `src/models/` · `src/gateway/` · `src/control_plane/` · `src/main.py` |
+| 1 | `src/connectors/` · `src/governance/{ratelimit,cache,secrets}.py` · `config/**` · `002_seed.sql` |
+| 2 | `src/sqlparse/` · `src/entitlement/` · `src/planner/` · `src/execution/` · `src/pipeline/` · `src/governance/audit.py` · `scripts/demo.sh` |
+| 3 | `ui/` · `tests/e2e/` |
+| 4 | `src/observability/` · `load/` |
+
+**`src/main.py` is the only genuinely shared file** — P0 creates it, P2 rewires `/v1/query` to the real runner,
+P3 mounts the static console, P4 mounts real `/metrics`. Everything else is disjoint.
+
+### So parallelism is possible — here is the only clean seam
+
+**P1 ∥ P2a**, where *P2a* is the pure-AST half of Phase 2 (`SQLParser`, `EntitlementEngine`, `QueryPlanner`).
+Those three operate on a sqlglot AST plus a capability **dict**; they never call an adapter, so every unit test in
+Phase 2's list except the integration ones can be written with no Phase 1 code present. Then *P2b*
+(`FederationEngine`, `assemble`, `runner`, integration tests, `make demo`) joins the two tracks.
+
+Preconditions, all three required:
+1. **Phase 0 is complete and `src/models/` is frozen** — both tracks code against that contract.
+2. **`pyproject.toml` declares every dependency up front** (Phase 0's spec already lists them all), so neither
+   track edits it.
+3. P2a uses an **inline capability fixture** — the one the AST spike already produces — and P2b swaps it for the
+   real `control_plane.get_capabilities()` read.
+
+### Why we're not doing it anyway
+
+- **The human plan-review gate serializes the work regardless.** Two concurrent tracks means two plans to review
+  at once and two `REVIEW.md` files; the bottleneck is attention, not CPU.
+- **P2a's design depends on the spike's outcome.** If `qualify()` + predicate-split-by-owning-table doesn't behave
+  as §D Card 1 claims, P2a gets reshaped — parallel work started early is work rewritten.
+- **The saving is small against the risk.** Maybe 2–3h off an 18–24h build, in exchange for a merge step on the
+  one shared file every other phase also touches.
+
+Revisit only if a second person (or a worktree-isolated agent) takes Phase 1 end-to-end while you take P2a.
+
+### Front-load observability instead — this is the real win
+
+Don't retrofit instrumentation in Phase 4. Phase 0 already stubs `GET /metrics`; extend that slightly:
+
+- **Phase 0** also builds the OTel span decorator and the Prometheus registry, so the seams exist from day one.
+- **Phase 2** decorates each stage *as it writes it* (`parse_ms`, `entitlement_ms`, `plan_ms`,
+  `connector_*_ms`, `duckdb_join_ms`) — one line per stage while the code is fresh, instead of re-reading five
+  modules later to find the boundaries.
+- **Phase 4** then shrinks to what only it can do: run k6, capture the trace waterfall and `/metrics` scrape,
+  finish the README. Roughly 1–1.5h instead of 2–3h, and the instrumentation is better because it was written by
+  whoever wrote the stage.
+
+This is free: it changes no dependency and creates no merge conflict.
+
 ## Phase tracker
 
 Tick as each phase's green gate passes. Tier and gate detail live in `01-EXECUTION-PLAN.md`'s scope ledger.
