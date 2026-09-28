@@ -42,6 +42,7 @@ from src.connectors.base import (
 )
 from src.connectors.errors import FailureMode, classify
 from src.connectors.pagination import strategy_for
+from src.connectors.synthetic import synthetic_rows
 from src.governance.cache import CacheStatus, FreshnessCacheManager
 from src.governance.clock import NowMs, wall_clock_ms
 from src.governance.ratelimit import RateLimitPolicy, TokenBucketRateLimiter
@@ -135,6 +136,27 @@ class MockConnectorAdapter(BaseConnectorAdapter):
         """The rows this source would return unfiltered. Overridden per adapter."""
         raise NotImplementedError
 
+    def dataset_for(self, tenant_id: str) -> list[dict[str, Any]]:
+        """The rows *this tenant* would see.
+
+        Identical to :meth:`dataset` for every tenant except the synthetic load
+        tenants, which get their own generated rows so that (a) a cross-tenant
+        leak is detectable in a response and (b) the load generator has a key
+        space to draw from. See :mod:`src.connectors.synthetic`.
+
+        Off unless ``SYNTHETIC_ROWS`` is set, so a normal run — and the whole
+        test suite — reads the committed fixtures exactly as before.
+        """
+        settings = get_settings()
+        if settings.SYNTHETIC_ROWS and tenant_id.startswith(settings.LOAD_TENANT_PREFIX):
+            return synthetic_rows(
+                tenant_id,
+                self.connector_type,
+                settings.SYNTHETIC_ROWS,
+                settings.SYNTHETIC_KEYSPACE,
+            )
+        return self.dataset()
+
     # -- test / demo hooks ------------------------------------------------
 
     def fail_next(self, mode: FailureMode | None) -> None:
@@ -225,7 +247,7 @@ class MockConnectorAdapter(BaseConnectorAdapter):
     # -- steps 4 and 5 ----------------------------------------------------
 
     def _page(self, request: FetchRequest):
-        rows = self._apply_predicates(self.dataset(), request.predicates)
+        rows = self._apply_predicates(self.dataset_for(request.tenant_id), request.predicates)
         rows = self._project(rows, request.projection)
         return strategy_for(self._capabilities.pagination).paginate(
             rows, limit=request.limit, page=request.page
@@ -300,9 +322,7 @@ class MockConnectorAdapter(BaseConnectorAdapter):
                     ),
                 )
 
-        missing = [
-            c for c in self._capabilities.required_columns() if c not in request.predicates
-        ]
+        missing = [c for c in self._capabilities.required_columns() if c not in request.predicates]
         if missing:
             raise ApiError(
                 code=ErrorCode.ENTITLEMENT_DENIED,
@@ -351,8 +371,7 @@ class MockConnectorAdapter(BaseConnectorAdapter):
                     code=ErrorCode.CONNECTOR_NOT_ENABLED,
                     http=403,
                     message=(
-                        f"connector {self.connector_type!r} is not active for tenant "
-                        f"{tenant_id!r}"
+                        f"connector {self.connector_type!r} is not active for tenant {tenant_id!r}"
                     ),
                 )
             return grant["secret_ref"]
@@ -360,9 +379,7 @@ class MockConnectorAdapter(BaseConnectorAdapter):
         raise ApiError(
             code=ErrorCode.CONNECTOR_NOT_ENABLED,
             http=403,
-            message=(
-                f"tenant {tenant_id!r} has no grant for connector {self.connector_type!r}"
-            ),
+            message=(f"tenant {tenant_id!r} has no grant for connector {self.connector_type!r}"),
         )
 
     # -- helpers ----------------------------------------------------------
