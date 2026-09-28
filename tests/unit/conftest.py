@@ -8,11 +8,9 @@ convenient path in a test is also the correct one — a test that reached for
 """
 
 from collections.abc import Iterator
-from types import SimpleNamespace
 
 import fakeredis.aioredis
 import pytest
-from cryptography.fernet import Fernet
 
 from src.connectors.github import GitHubConnectorAdapter
 from src.connectors.jira import JiraConnectorAdapter
@@ -27,17 +25,31 @@ from src.sqlparse.catalog import SourceCatalog
 from src.sqlparse.parser import SQLParser
 from tests.unit.catalog_fixture import (
     GITHUB_CAPABILITIES,
+    GITHUB_ENDPOINT,
+    GITHUB_RATE_LIMIT,
     JIRA_CAPABILITIES,
+    JIRA_ENDPOINT,
+    JIRA_RATE_LIMIT,
     build_catalog,
+    connector_rows,
+)
+from tests.unit.fakes import (
+    FakeControlPlane,
+    SpyCache,
+    SpyLimiter,
 )
 
 #: Re-exported: `test_whitelist` imports `build_catalog` from this module.
-__all__ = ["GITHUB_CAPABILITIES", "JIRA_CAPABILITIES", "build_catalog"]
-
-#: One Fernet key for every fixture tenant. Generated per run rather than
-#: committed: nothing here asserts a specific key, only that the right tenant's
-#: key is the one used.
-ACME_FERNET_KEY = Fernet.generate_key().decode()
+__all__ = [
+    "GITHUB_CAPABILITIES",
+    "GITHUB_ENDPOINT",
+    "GITHUB_RATE_LIMIT",
+    "JIRA_CAPABILITIES",
+    "JIRA_ENDPOINT",
+    "JIRA_RATE_LIMIT",
+    "build_catalog",
+    "connector_rows",
+]
 
 
 @pytest.fixture
@@ -66,124 +78,6 @@ async def fake_redis():
 # repeated here rather than read from the YAML so the unit suite stays free of
 # file I/O; `tests/integration/test_seed.py` is what asserts the YAML actually
 # round-trips into these shapes through Postgres.
-
-
-class FakeControlPlane:
-    """The four control-plane reads a connector makes, without Postgres.
-
-    Counts its calls so a test can assert that an adapter which served from
-    cache did not go on to read a rate-limit policy it had no use for.
-    """
-
-    def __init__(self, timeline: list[str] | None = None) -> None:
-        self.calls: list[tuple[str, tuple]] = []
-        # Shared with SpyLimiter so a test can assert the ORDER of steps across
-        # both collaborators, not just that each one happened.
-        self.timeline = [] if timeline is None else timeline
-        self.rate_limits = {
-            ("tenant_acme", "github"): {"max_requests": 5, "window_sec": 60, "burst": 2},
-            ("tenant_acme", "jira"): {"max_requests": 30, "window_sec": 60, "burst": 5},
-            ("tenant_load", "github"): {"max_requests": 5000, "window_sec": 60, "burst": 500},
-            ("tenant_load", "jira"): {"max_requests": 5000, "window_sec": 60, "burst": 500},
-        }
-        self.grants = {
-            "tenant_acme": [
-                {
-                    "connector_type": "github",
-                    "enabled": True,
-                    "status": "active",
-                    "secret_ref": "tenant_acme/github",
-                },
-                {
-                    "connector_type": "jira",
-                    "enabled": True,
-                    "status": "active",
-                    "secret_ref": "tenant_acme/jira",
-                },
-            ],
-            "tenant_load": [
-                {
-                    "connector_type": "github",
-                    "enabled": True,
-                    "status": "active",
-                    "secret_ref": "tenant_load/github",
-                },
-                {
-                    "connector_type": "jira",
-                    "enabled": True,
-                    "status": "active",
-                    "secret_ref": "tenant_load/jira",
-                },
-            ],
-        }
-        self.secrets = {
-            ref: {
-                "secret_ref": ref,
-                "tenant_id": ref.split("/")[0],
-                "ciphertext": SecretsManagerClient.encrypt(ACME_FERNET_KEY, f"token-for-{ref}"),
-            }
-            for ref in (
-                "tenant_acme/github",
-                "tenant_acme/jira",
-                "tenant_load/github",
-                "tenant_load/jira",
-            )
-        }
-        self.tenants = {
-            t: SimpleNamespace(tenant_id=t, fernet_key=ACME_FERNET_KEY)
-            for t in ("tenant_acme", "tenant_load")
-        }
-
-    def get_rate_limit_policy(self, tenant_id, connector_type):
-        self.calls.append(("get_rate_limit_policy", (tenant_id, connector_type)))
-        return self.rate_limits.get((tenant_id, connector_type))
-
-    def read_cache_marker(self) -> None:
-        """Called by the cache spy — see `cache` fixture."""
-        self.timeline.append("read_cache")
-
-    def get_tenant_connectors(self, tenant_id):
-        self.calls.append(("get_tenant_connectors", (tenant_id,)))
-        return self.grants.get(tenant_id, [])
-
-    def get_secret(self, secret_ref):
-        self.calls.append(("get_secret", (secret_ref,)))
-        self.timeline.append("resolve_secret")
-        return self.secrets.get(secret_ref)
-
-    def get_tenant(self, tenant_id):
-        self.calls.append(("get_tenant", (tenant_id,)))
-        return self.tenants.get(tenant_id)
-
-
-class SpyLimiter(TokenBucketRateLimiter):
-    """A limiter that records every consume, so ORDER can be asserted.
-
-    The other tests assert outcomes; an outcome cannot distinguish "cache hit,
-    no token spent" from "token spent, then refunded".
-    """
-
-    def __init__(self, *args, timeline: list[str] | None = None, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
-        self.consumed: list[tuple[str, str]] = []
-        self.timeline = [] if timeline is None else timeline
-
-    async def consume(self, tenant_id, connector_type, policy):
-        self.consumed.append((tenant_id, connector_type))
-        self.timeline.append("consume_token")
-        return await super().consume(tenant_id, connector_type, policy)
-
-
-class SpyCache(FreshnessCacheManager):
-    """Records cache reads onto the shared timeline."""
-
-    def __init__(self, *args, timeline: list[str] | None = None, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
-        self.timeline = [] if timeline is None else timeline
-
-    async def get(self, key, max_staleness_ms):
-        self.timeline.append("read_cache")
-        return await super().get(key, max_staleness_ms)
 
 
 @pytest.fixture
@@ -215,7 +109,10 @@ def secrets(control_plane) -> SecretsManagerClient:
 @pytest.fixture
 def github(cache, limiter, secrets, control_plane, fake_clock) -> GitHubConnectorAdapter:
     return GitHubConnectorAdapter(
+        resource="pull_requests",
         capabilities=GITHUB_CAPABILITIES,
+        endpoint=GITHUB_ENDPOINT,
+        rate_limit=GITHUB_RATE_LIMIT,
         cache=cache,
         limiter=limiter,
         secrets=secrets,
@@ -227,7 +124,10 @@ def github(cache, limiter, secrets, control_plane, fake_clock) -> GitHubConnecto
 @pytest.fixture
 def jira(cache, limiter, secrets, control_plane, fake_clock) -> JiraConnectorAdapter:
     return JiraConnectorAdapter(
+        resource="issues",
         capabilities=JIRA_CAPABILITIES,
+        endpoint=JIRA_ENDPOINT,
+        rate_limit=JIRA_RATE_LIMIT,
         cache=cache,
         limiter=limiter,
         secrets=secrets,
@@ -254,7 +154,10 @@ async def second_redis():
 def second_github(second_redis, fake_clock, control_plane, secrets) -> GitHubConnectorAdapter:
     """An independent GitHub adapter: its own cache and its own bucket."""
     return GitHubConnectorAdapter(
+        resource="pull_requests",
         capabilities=GITHUB_CAPABILITIES,
+        endpoint=GITHUB_ENDPOINT,
+        rate_limit=GITHUB_RATE_LIMIT,
         cache=FreshnessCacheManager(second_redis, now_ms=fake_clock, ttl_ms=300_000),
         limiter=TokenBucketRateLimiter(second_redis, now_ms=fake_clock),
         secrets=secrets,
@@ -293,7 +196,16 @@ LIMIT 50
 GRANTED = frozenset({"github", "jira"})
 
 #: Re-exported: `test_whitelist` imports `build_catalog` from this module.
-__all__ = ["GITHUB_CAPABILITIES", "JIRA_CAPABILITIES", "build_catalog"]
+__all__ = [
+    "GITHUB_CAPABILITIES",
+    "GITHUB_ENDPOINT",
+    "GITHUB_RATE_LIMIT",
+    "JIRA_CAPABILITIES",
+    "JIRA_ENDPOINT",
+    "JIRA_RATE_LIMIT",
+    "build_catalog",
+    "connector_rows",
+]
 
 
 @pytest.fixture
@@ -334,8 +246,15 @@ def adapters(github, jira) -> dict:
     Sharing is the realistic wiring — one process, one Redis — and it is what
     lets a test assert that a cache hit on one source did not spend the other's
     token.
+
+    Keyed by ``(connector_type, resource)``, the way ``ConnectorRegistry.adapters()``
+    keys them: one connector serves several API calls, so ``"github"`` alone no
+    longer names an adapter.
     """
-    return {"github": github, "jira": jira}
+    return {
+        ("github", "pull_requests"): github,
+        ("jira", "issues"): jira,
+    }
 
 
 @pytest.fixture

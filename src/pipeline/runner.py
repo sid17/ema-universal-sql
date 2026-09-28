@@ -109,7 +109,7 @@ class QueryPipelineRunner:
 
         with stage("federation", stats):
             result = await FederationEngine(
-                self._registry.adapters(),
+                await self._registry.adapters(),
                 deadline_ms=self._deadline_ms,
                 pool=self._duckdb_pool,
             ).execute(

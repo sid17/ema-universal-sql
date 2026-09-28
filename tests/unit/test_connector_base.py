@@ -35,6 +35,7 @@ GITHUB_CAPABILITIES = {
         "strategy": "cursor",
         "page_size": 100,
         "token_option": {"inject_into": "query", "field": "cursor"},
+        "size_option": {"inject_into": "query", "field": "per_page"},
         "stop": "returned<page_size",
     },
 }

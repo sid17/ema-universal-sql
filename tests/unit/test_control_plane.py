@@ -135,7 +135,7 @@ def test_each_read_has_its_own_cache_slot(repo, pool):
     """Five reads, five queries — no key collisions between different methods."""
     repo.get_tenant("tenant_acme")
     repo.get_tenant_connectors("tenant_acme")
-    repo.get_capabilities("github")
+    repo.get_connector("github", "pull_requests")
     repo.get_policies("tenant_acme", ["github"], ["pull_requests"])
     repo.get_rate_limit_policy("tenant_acme", "github")
 
@@ -144,7 +144,7 @@ def test_each_read_has_its_own_cache_slot(repo, pool):
     # ...and every one of them is then cached.
     repo.get_tenant("tenant_acme")
     repo.get_tenant_connectors("tenant_acme")
-    repo.get_capabilities("github")
+    repo.get_connector("github", "pull_requests")
     repo.get_policies("tenant_acme", ["github"], ["pull_requests"])
     repo.get_rate_limit_policy("tenant_acme", "github")
 

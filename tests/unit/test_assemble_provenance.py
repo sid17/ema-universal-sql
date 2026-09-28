@@ -45,9 +45,7 @@ async def test_freshness_reports_the_stalest_contributor(parser, assembler, fake
         for alias, stamp in (("pr", new), ("issue", old))
     )
     result = FederationResult(rows=[], columns=(), fetches=fetches)
-    env = await assembler.assemble(
-        plan, result, "tenant_acme", "t", 60_000, Page(0, 50)
-    )
+    env = await assembler.assemble(plan, result, "tenant_acme", "t", 60_000, Page(0, 50))
     assert 29_000 < env.freshness_ms < 31_000  # the OLD one, not the new one
 
 
@@ -56,18 +54,14 @@ async def test_freshness_is_none_when_nothing_was_fetched(parser, assembler, fak
     perfect freshness for an answer with no contributors."""
     plan = make_plan(parser)
     result = FederationResult(rows=[], columns=(), fetches=())
-    env = await assembler.assemble(
-        plan, result, "tenant_acme", "t", 60_000, Page(0, 50)
-    )
+    env = await assembler.assemble(plan, result, "tenant_acme", "t", 60_000, Page(0, 50))
     assert env.freshness_ms is None
 
 
 # --- GATE: the three outcomes stay distinct ---------------------------------
 
 
-async def test_a_successful_query_is_complete_and_not_partial(
-    parser, adapters, assembler
-):
+async def test_a_successful_query_is_complete_and_not_partial(parser, adapters, assembler):
     env = await envelope(parser, adapters, assembler)
     assert len(env.rows) == 3
     assert env.partial is False
@@ -75,9 +69,7 @@ async def test_a_successful_query_is_complete_and_not_partial(
     assert env.warnings == []
 
 
-async def test_empty_is_a_correct_answer_not_a_degraded_one(
-    parser, adapters, assembler
-):
+async def test_empty_is_a_correct_answer_not_a_degraded_one(parser, adapters, assembler):
     """**The `empty` leg.** carol ran fine and matched nothing."""
     env = await envelope(parser, adapters, assembler, user_id="carol")
     assert env.rows == []
@@ -86,11 +78,9 @@ async def test_empty_is_a_correct_answer_not_a_degraded_one(
     assert env.warnings == []
 
 
-async def test_partial_is_visibly_different_from_empty(
-    parser, adapters, assembler
-):
+async def test_partial_is_visibly_different_from_empty(parser, adapters, assembler):
     """**The `partial` leg.** Rows present, a side missing, and said so."""
-    adapters["jira"].fail_next(FailureMode.TIMEOUT)
+    adapters[("jira", "issues")].fail_next(FailureMode.TIMEOUT)
     env = await envelope(parser, adapters, assembler)
     assert env.partial is True
     assert env.join_status == "incomplete"
@@ -106,7 +96,7 @@ async def test_a_timed_out_join_never_passes_the_unjoined_side_off_as_joined(
     GitHub returned 14 rows. If those were handed back as "the joined answer",
     a caller would receive PRs with no issue attached and no way to tell.
     """
-    adapters["jira"].fail_next(FailureMode.TIMEOUT)
+    adapters[("jira", "issues")].fail_next(FailureMode.TIMEOUT)
     env = await envelope(parser, adapters, assembler)
     assert len(env.rows) < 14
     assert env.join_status == "incomplete"
@@ -114,9 +104,7 @@ async def test_a_timed_out_join_never_passes_the_unjoined_side_off_as_joined(
     assert github.state == "ok"
 
 
-async def test_state_and_served_are_reported_separately(
-    parser, adapters, assembler
-):
+async def test_state_and_served_are_reported_separately(parser, adapters, assembler):
     """`state` is how the fetch ended; `served` is where the rows came from — so
     a timeout still answered from cache is distinguishable from one that
     returned nothing."""
@@ -127,7 +115,7 @@ async def test_state_and_served_are_reported_separately(
 
 async def test_error_is_the_third_shape(parser, adapters, assembler):
     """**The `error` leg.** No envelope at all — it raises before assembly."""
-    adapters["jira"].fail_next(FailureMode.AUTH)
+    adapters[("jira", "issues")].fail_next(FailureMode.AUTH)
     with pytest.raises(ApiError):
         await envelope(parser, adapters, assembler)
 
@@ -135,9 +123,7 @@ async def test_error_is_the_third_shape(parser, adapters, assembler):
 # --- join_status ------------------------------------------------------------
 
 
-async def test_a_query_with_no_join_reports_na(
-    parser, adapters, assembler
-):
+async def test_a_query_with_no_join_reports_na(parser, adapters, assembler):
     """`n/a` is not a hedge: "was the join complete" has no answer for a query
     that did not join."""
     env = await envelope(
@@ -153,18 +139,14 @@ async def test_a_query_with_no_join_reports_na(
 # --- budgets ----------------------------------------------------------------
 
 
-async def test_rate_limit_status_is_reported_per_connector(
-    parser, adapters, assembler
-):
+async def test_rate_limit_status_is_reported_per_connector(parser, adapters, assembler):
     env = await envelope(parser, adapters, assembler)
     assert set(env.rate_limit_status) == {"github", "jira"}
     assert env.rate_limit_status["github"].throttled is False
     assert env.rate_limit_status["github"].remaining > 0
 
 
-async def test_reading_the_budget_does_not_spend_a_token(
-    parser, adapters, assembler
-):
+async def test_reading_the_budget_does_not_spend_a_token(parser, adapters, assembler):
     """`remaining()` uses the same Lua as `consume()` with amount=0, so the
     refill arithmetic has exactly one implementation — and reporting the budget
     cannot cost one."""
@@ -207,9 +189,7 @@ async def test_the_trace_id_is_carried_verbatim(parser, adapters, assembler):
 # --- STALE_DATA -------------------------------------------------------------
 
 
-async def test_a_stale_answer_warns_but_still_returns_rows(
-    parser, assembler, fake_clock
-):
+async def test_a_stale_answer_warns_but_still_returns_rows(parser, assembler, fake_clock):
     """STALE_DATA rides back on a 200 (design-doc §8.1): the answer is usable
     but caveated, and failing the query would throw away good rows."""
     plan = make_plan(parser)
@@ -225,17 +205,13 @@ async def test_a_stale_answer_warns_but_still_returns_rows(
         ),
     )
     result = FederationResult(rows=[["a"]], columns=(("k", "string"),), fetches=fetches)
-    env = await assembler.assemble(
-        plan, result, "tenant_acme", "t", 1000, Page(0, 50)
-    )
+    env = await assembler.assemble(plan, result, "tenant_acme", "t", 1000, Page(0, 50))
     assert [w["code"] for w in env.warnings] == ["STALE_DATA"]
     assert env.rows == [["a"]]
     assert env.partial is False
 
 
-async def test_the_gauge_publishes_exactly_what_the_envelope_reports(
-    parser, adapters, assembler
-):
+async def test_the_gauge_publishes_exactly_what_the_envelope_reports(parser, adapters, assembler):
     """ADR-043, and the reason the gauge is fed from here rather than anywhere else.
 
     Two separate reads of the bucket could disagree — the caller's banner would

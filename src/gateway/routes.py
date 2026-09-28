@@ -190,7 +190,7 @@ def query_async() -> dict[str, str]:
 
 
 @router.post("/v1/test/fail-next", tags=["ops"])
-def test_fail_next(body: FailNextRequest, request: Request) -> dict[str, str]:
+async def test_fail_next(body: FailNextRequest, request: Request) -> dict[str, str]:
     """Make the next fetch of one connector fail. Test-only; 404 unless ``TEST_MODE``.
 
     This is what makes "a source times out, the answer degrades to partial"
@@ -215,7 +215,7 @@ def test_fail_next(body: FailNextRequest, request: Request) -> dict[str, str]:
     runner = getattr(request.app.state, "runner", None)
     if runner is None:
         raise RuntimeError("query pipeline is not configured on app.state")
-    runner.registry.fail_next(body.connector, mode)
+    await runner.registry.fail_next(body.connector, mode)
 
     return {"status": "armed", "connector": body.connector, "mode": mode.value}
 

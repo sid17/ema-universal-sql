@@ -177,7 +177,7 @@ async def test_cursor_is_null_when_partial(parser, adapters, assembler):
     """**HLD §9 rail.** Paging from an incomplete page would silently skip the
     rows the failed source never contributed — making the omission invisible
     exactly when it matters most."""
-    adapters["jira"].fail_next(FailureMode.TIMEOUT)
+    adapters[("jira", "issues")].fail_next(FailureMode.TIMEOUT)
     env = await envelope(parser, adapters, assembler, page=Page(0, 1))
     assert env.partial is True
     assert env.next_cursor is None

@@ -299,13 +299,14 @@ class FederationEngine:
         return tuple(fetches)
 
     def _adapter_for(self, source_plan: SourcePlan) -> BaseConnectorAdapter:
-        adapter = self._adapters.get(source_plan.connector_type)
+        # Keyed by (connector_type, resource): one connector serves several API
+        # calls, so `github` alone no longer names an adapter.
+        key = (source_plan.source.connector_type, source_plan.source.resource)
+        adapter = self._adapters.get(key)
         if adapter is None:
             # A wiring bug, not a caller problem. Failing loudly beats degrading
             # to a partial result that hides a missing adapter forever.
-            raise RuntimeError(
-                f"no adapter registered for connector {source_plan.connector_type!r}"
-            )
+            raise RuntimeError(f"no adapter registered for source {'.'.join(key)!r}")
         return adapter
 
     @staticmethod

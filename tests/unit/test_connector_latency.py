@@ -23,7 +23,7 @@ from src.connectors.base import FetchRequest
 from src.connectors.github import GitHubConnectorAdapter
 from src.connectors.jira import JiraConnectorAdapter
 from src.models.errors import ApiError
-from tests.unit.conftest import GITHUB_CAPABILITIES
+from tests.unit.conftest import GITHUB_CAPABILITIES, GITHUB_ENDPOINT, GITHUB_RATE_LIMIT
 from tests.unit.test_connectors import ACME, SCOPE, gh_request
 
 
@@ -35,7 +35,10 @@ def slow_github(cache, limiter, secrets, control_plane, fake_clock):
     process-wide settings that another test might have cached.
     """
     return GitHubConnectorAdapter(
+        resource="pull_requests",
         capabilities=GITHUB_CAPABILITIES,
+        endpoint=GITHUB_ENDPOINT,
+        rate_limit=GITHUB_RATE_LIMIT,
         cache=cache,
         limiter=limiter,
         secrets=secrets,
@@ -70,9 +73,7 @@ async def test_a_live_fetch_pays_the_latency(
     assert elapsed_ms >= GitHubConnectorAdapter.simulated_latency_ms
 
 
-async def test_a_cache_hit_does_not(
-    cache, limiter, secrets, control_plane, fake_clock
-) -> None:
+async def test_a_cache_hit_does_not(cache, limiter, secrets, control_plane, fake_clock) -> None:
     """**The assertion the whole placement decision rests on.**
 
     Latency above the cache check would break three things at once: the

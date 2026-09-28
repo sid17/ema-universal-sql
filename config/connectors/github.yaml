@@ -1,65 +1,105 @@
-# GitHub pull requests — connector definition.
+# GitHub — connector definition.
 #
 # Onboarding a connector is ONE file like this plus one adapter class (take-home
-# line 29: admins onboard "via console or config"). This file is loaded verbatim
-# into `connectors(connector_type, version, capabilities JSONB)` by
-# `scripts/seed.py`; nothing here is duplicated in Python.
+# line 29: admins onboard "via console or config"). Onboarding another GitHub
+# **API call** is one more entry under `resources:` and NO Python at all — which
+# is the point of the `api:` / `resources:` split below.
+#
+# This file is loaded verbatim into
+# `connectors(connector_type, resource, version, endpoint, rate_limit, capabilities)`
+# by `scripts/seed.py`, one row per resource. Nothing here is duplicated in code.
 #
 # A capability is (predicate support) + (where the value is injected) — the
 # airbyte-cdk RequestOption pattern, research Card 2. Knowing that GitHub can
 # filter on `state` is useless without knowing it goes in the query string while
-# `repo` goes in the URL path.
+# `repo` goes in the URL path. `src/connectors/request.py` EXECUTES that
+# placement, so swapping `path` and `query` below changes the call that is made.
 
 connector_type: github
 version: "1.0.0"
-resource: pull_requests
 
-capabilities:
-  columns:
-    - number
-    - title
-    - author
-    - repo
-    - state
-    - issue_key
-    - created_at
-    - updated_at
+# --- the API itself: true for every resource below --------------------------
+api:
+  host: api.github.com
+  # Bearer, so the resolved per-tenant credential is sent verbatim.
+  auth_scheme: bearer
+  headers:
+    Accept: application/vnd.github+json
+    X-GitHub-Api-Version: "2022-11-28"
 
-  # Only non-string columns need declaring; everything else defaults to string.
-  # Phase 2 needs a type BEFORE it has a row to look at: the Arrow schema handed
-  # to duckdb.register must be explicit (an empty result infers zero columns and
-  # DuckDB refuses to register it), and QueryEnvelope.columns[].type is part of
-  # the response contract.
-  column_types:
-    number: integer
+  # How this source reports its budget, and how it REFUSES. GitHub's primary
+  # rate limit answers 403 with the remaining count at zero; its 429 is reserved
+  # for secondary (abuse) limits. Jira says the same thing with a 429 and a
+  # Retry-After — which is exactly why this is data and not an `if` in the
+  # adapter. Both normalise to one ApiError(RATE_LIMIT_EXHAUSTED).
+  rate_limit:
+    limit_header: X-RateLimit-Limit
+    remaining_header: X-RateLimit-Remaining
+    reset_header: X-RateLimit-Reset
+    exhausted_status: 403
+    sends_retry_after: false
+    extra_headers:
+      X-RateLimit-Resource: core
+    exhausted_body:
+      message: API rate limit exceeded for installation.
+      documentation_url: https://docs.github.com/rest/overview/rate-limits-for-the-rest-api
 
-  key_columns:
-    # REQUIRED, and injected into the path: there is no GitHub endpoint that
-    # lists pull requests across every repository, so a fetch without `repo`
-    # has no URL to call at all. This is `require: required` earning its keep.
-    repo:
-      require: required
-      ops: ["="]
-      option: {inject_into: path, field: repo}
+# --- one entry per API call this connector can serve ------------------------
+resources:
+  pull_requests:
+    endpoint:
+      method: GET
+      # `repo` is a PATH parameter, which is why the capability model marks it
+      # `require: required`: `/repos//pulls` is not a URL. This is the one place
+      # `require` earns its keep rather than being decoration.
+      path: /repos/{repo}/pulls
 
-    state:
-      require: optional
-      ops: ["="]
-      option: {inject_into: query, field: state}
+    capabilities:
+      columns:
+        - number
+        - title
+        - author
+        - repo
+        - state
+        - issue_key
+        - created_at
+        - updated_at
 
-    author:
-      require: optional
-      ops: ["="]
-      option: {inject_into: query, field: author}
+      # Only non-string columns need declaring; everything else defaults to
+      # string. Phase 2 needs a type BEFORE it has a row to look at: the Arrow
+      # schema handed to duckdb.register must be explicit (an empty result infers
+      # zero columns and DuckDB refuses to register it), and
+      # QueryEnvelope.columns[].type is part of the response contract.
+      column_types:
+        number: integer
 
-  sortable:
-    - created_at
-    - updated_at
+      key_columns:
+        repo:
+          require: required
+          ops: ["="]
+          option: {inject_into: path, field: repo}
 
-  # Cursor pagination — what a real GitHub client reads out of the Link header.
-  # The strategy computes the token; `token_option` says where it is injected.
-  pagination:
-    strategy: cursor
-    page_size: 100
-    token_option: {inject_into: query, field: cursor}
-    stop: returned<page_size
+        state:
+          require: optional
+          ops: ["="]
+          option: {inject_into: query, field: state}
+
+        author:
+          require: optional
+          ops: ["="]
+          option: {inject_into: query, field: author}
+
+      sortable:
+        - created_at
+        - updated_at
+
+      # Cursor pagination — what a real GitHub client reads out of the Link
+      # header. The strategy computes the token; `token_option` says where it is
+      # injected; `size_option` names the page-size parameter, which every paging
+      # API spells differently (`per_page` here, `maxResults` in Jira).
+      pagination:
+        strategy: cursor
+        page_size: 100
+        token_option: {inject_into: query, field: cursor}
+        size_option: {inject_into: query, field: per_page}
+        stop: returned<page_size

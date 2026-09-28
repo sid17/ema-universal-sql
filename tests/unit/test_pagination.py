@@ -23,12 +23,14 @@ CURSOR_SPEC = PaginationSpec(
     strategy="cursor",
     page_size=100,
     token_option=RequestOption("query", "cursor"),
+    size_option=RequestOption("query", "per_page"),
     stop="returned<page_size",
 )
 OFFSET_SPEC = PaginationSpec(
     strategy="offset",
     page_size=100,
     token_option=RequestOption("query", "startAt"),
+    size_option=RequestOption("query", "maxResults"),
     stop="returned<page_size",
 )
 
@@ -210,8 +212,11 @@ def test_strategy_is_built_from_the_seeded_spec():
 def test_unknown_strategy_in_yaml_fails_loudly():
     """A typo in a capability file must fail, not silently page the wrong way."""
     typo = PaginationSpec(
-        strategy="curser", page_size=100,
-        token_option=RequestOption("query", "cursor"), stop="returned<page_size",
+        strategy="curser",
+        page_size=100,
+        token_option=RequestOption("query", "cursor"),
+        size_option=RequestOption("query", "per_page"),
+        stop="returned<page_size",
     )
     with pytest.raises(ValueError, match="unknown pagination strategy"):
         strategy_for(typo)

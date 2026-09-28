@@ -17,6 +17,8 @@ import yaml
 from psycopg.rows import dict_row
 
 from src.connectors.base import CapabilityModel
+from src.connectors.request import EndpointSpec, compose_endpoint
+from src.connectors.response import RateLimitDialect
 from src.control_plane.repository import ControlPlaneRepository
 from src.governance.ratelimit import RateLimitPolicy
 from src.governance.secrets import SecretsManagerClient
@@ -71,8 +73,7 @@ def count(conn, table: str) -> int:
 
 
 def test_every_configured_table_has_rows(conn):
-    for table in ("connectors", "tenant_connector", "secrets",
-                  "policies", "rate_limit_policies"):
+    for table in ("connectors", "tenant_connector", "secrets", "policies", "rate_limit_policies"):
         assert count(conn, table) > 0, f"{table} is empty — did `make seed` run?"
 
 
@@ -90,8 +91,10 @@ def test_seeding_twice_leaves_identical_row_counts(conn):
     """A reviewer reseeding after a demo must not get a crash or doubled rows."""
     from scripts.seed import seed
 
-    before = {t: count(conn, t) for t in
-              ("connectors", "tenant_connector", "secrets", "policies", "rate_limit_policies")}
+    before = {
+        t: count(conn, t)
+        for t in ("connectors", "tenant_connector", "secrets", "policies", "rate_limit_policies")
+    }
     seed(DATABASE_URL)
     seed(DATABASE_URL)
     after = {t: count(conn, t) for t in before}
@@ -110,19 +113,60 @@ def test_reseeding_does_not_break_secret_resolution(conn, repository):
 # --- the YAML round-trips through the control-plane reads ------------------
 
 
-def test_capabilities_read_back_exactly_as_authored(repository):
-    """`get_capabilities` must return something the adapter can actually build."""
+def test_every_authored_resource_becomes_its_own_row(repository):
+    """One row per `(connector_type, resource)`, and every field the adapter needs.
+
+    A connector file declares an API and the calls it serves, so onboarding
+    another GitHub endpoint is one more entry under `resources:` and no Python.
+    This asserts the seeder actually expands that map rather than writing one
+    row per file.
+    """
     for name in ("github", "jira"):
-        authored = load(os.path.join("connectors", f"{name}.yaml"))["capabilities"]
-        row = repository.get_capabilities(name)
-        assert row is not None, f"{name} was not seeded"
-        assert CapabilityModel.from_dict(row["capabilities"]) == CapabilityModel.from_dict(
-            authored
-        )
+        doc = load(os.path.join("connectors", f"{name}.yaml"))
+        for resource, authored in doc["resources"].items():
+            row = repository.get_connector(name, resource)
+            assert row is not None, f"{name}.{resource} was not seeded"
+            assert CapabilityModel.from_dict(row["capabilities"]) == CapabilityModel.from_dict(
+                authored["capabilities"]
+            )
+            # The endpoint is the composition of the api: block and this
+            # resource's endpoint: block — the split the YAML authors in.
+            assert row["endpoint"] == compose_endpoint(doc["api"], authored["endpoint"])
+            assert row["rate_limit"] == doc["api"]["rate_limit"]
+
+
+def test_the_endpoint_builds_a_spec_the_request_builder_can_use(repository):
+    """Seeded JSON must round-trip into the dataclass, not merely be present."""
+    spec = EndpointSpec.from_dict(repository.get_connector("github", "pull_requests")["endpoint"])
+
+    assert spec.host == "api.github.com"
+    assert spec.path_template == "/repos/{repo}/pulls"
+    assert spec.auth_scheme == "bearer"
+
+
+def test_the_rate_limit_dialect_round_trips_too(repository):
+    """GitHub refuses with 403, Jira with 429 — and both are rows, not code."""
+    github = RateLimitDialect.from_dict(
+        repository.get_connector("github", "pull_requests")["rate_limit"]
+    )
+    jira = RateLimitDialect.from_dict(repository.get_connector("jira", "issues")["rate_limit"])
+
+    assert github.exhausted_status == 403
+    assert github.sends_retry_after is False
+    assert jira.exhausted_status == 429
+    assert jira.sends_retry_after is True
 
 
 def test_capability_version_is_stored(repository):
-    assert repository.get_capabilities("github")["version"] == "1.0.0"
+    assert repository.get_connector("github", "pull_requests")["version"] == "1.0.0"
+
+
+def test_list_connectors_returns_every_seeded_resource(repository):
+    """What the registry enumerates to build the catalog and the adapters."""
+    listed = {(row["connector_type"], row["resource"]) for row in repository.list_connectors()}
+
+    assert ("github", "pull_requests") in listed
+    assert ("jira", "issues") in listed
 
 
 def test_rate_limits_read_back_exactly_as_authored(repository):
@@ -138,17 +182,13 @@ def test_rate_limits_read_back_exactly_as_authored(repository):
 
 def test_the_demo_budget_is_small_enough_to_drain(repository):
     """tenant_acme/github must drain inside a short loop or `make demo` is a wait."""
-    policy = RateLimitPolicy.from_row(
-        repository.get_rate_limit_policy("tenant_acme", "github")
-    )
+    policy = RateLimitPolicy.from_row(repository.get_rate_limit_policy("tenant_acme", "github"))
     assert policy.capacity <= 10
 
 
 def test_the_load_budget_is_large_enough_not_to_throttle(repository):
     """tenant_load is the only tenant k6 may target (HLD §9)."""
-    policy = RateLimitPolicy.from_row(
-        repository.get_rate_limit_policy("tenant_load", "github")
-    )
+    policy = RateLimitPolicy.from_row(repository.get_rate_limit_policy("tenant_load", "github"))
     assert policy.max_requests >= 5000
 
 
@@ -296,8 +336,11 @@ def test_a_policy_naming_an_unknown_tenant_fails_loudly(monkeypatch):
         if path.name == "policies.yaml":
             document = {
                 "policies": [
-                    {**document["policies"][0], "policy_id": "bogus",
-                     "tenant_id": "tenant_does_not_exist"}
+                    {
+                        **document["policies"][0],
+                        "policy_id": "bogus",
+                        "tenant_id": "tenant_does_not_exist",
+                    }
                 ]
             }
         return document

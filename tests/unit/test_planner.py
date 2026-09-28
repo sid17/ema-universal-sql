@@ -104,10 +104,7 @@ def test_an_unsupported_operator_becomes_residual_never_dropped(parser):
     """
     plan = build_plan(
         parser,
-        sql=(
-            "SELECT issue.key, issue.status FROM jira.issues issue "
-            "WHERE issue.status != 'Done'"
-        ),
+        sql=("SELECT issue.key, issue.status FROM jira.issues issue WHERE issue.status != 'Done'"),
         policies=(),
     )
     source = plan.sources["issue"]
@@ -139,10 +136,7 @@ def test_a_range_operator_is_pushed_only_where_it_is_supported(parser):
     asymmetry is why `supports(column, op)` is a two-argument question."""
     plan = build_plan(
         parser,
-        sql=(
-            "SELECT issue.key FROM jira.issues issue "
-            "WHERE issue.updated > '2026-09-01'"
-        ),
+        sql=("SELECT issue.key FROM jira.issues issue WHERE issue.updated > '2026-09-01'"),
         policies=(),
     )
     assert [(p.column, p.op) for p in plan.sources["issue"].pushed] == [("updated", ">")]
@@ -164,9 +158,7 @@ def test_a_missing_required_filter_is_a_400_naming_the_column(parser):
 def test_jira_has_no_required_filter(parser):
     """The other half of the contract: Jira's filters are all optional, so the
     two sources between them prove both requirements rather than just one."""
-    plan = build_plan(
-        parser, sql="SELECT issue.key FROM jira.issues issue", policies=()
-    )
+    plan = build_plan(parser, sql="SELECT issue.key FROM jira.issues issue", policies=())
     assert plan.sources["issue"].pushed == ()
 
 
@@ -181,14 +173,17 @@ def test_projection_union_guard(plan):
     entitled to.
     """
     assert set(plan.sources["pr"].columns_to_fetch) == {
-        "title", "author",        # projection
-        "repo", "state",          # WHERE
-        "issue_key",              # join key
+        "title",
+        "author",  # projection
+        "repo",
+        "state",  # WHERE
+        "issue_key",  # join key
     }
     assert set(plan.sources["issue"].columns_to_fetch) == {
-        "key", "status",          # projection + WHERE + join key
-        "assignee",               # the injected RLS predicate
-        "updated",                # ORDER BY, and NOT projected
+        "key",
+        "status",  # projection + WHERE + join key
+        "assignee",  # the injected RLS predicate
+        "updated",  # ORDER BY, and NOT projected
     }
 
 
@@ -216,9 +211,7 @@ def test_a_masked_column_is_still_fetched(parser):
 def test_a_dropped_column_is_not_fetched(parser):
     """`drop` is the one mask that is also a column-pushdown saving: the column
     leaves the projection, so the union stops asking for it."""
-    plan = build_plan(
-        parser, sql=CLS_DEMO_SQL, policies=({**CLS_REPORTER, "mask": "drop"},)
-    )
+    plan = build_plan(parser, sql=CLS_DEMO_SQL, policies=({**CLS_REPORTER, "mask": "drop"},))
     assert "reporter_email" not in plan.sources["issue"].columns_to_fetch
 
 
@@ -272,16 +265,11 @@ def test_the_tiebreaker_is_not_added_twice(parser):
     """A query that already orders by the join key needs nothing appended."""
     plan = build_plan(
         parser,
-        sql=(
-            "SELECT issue.key FROM jira.issues issue "
-            "ORDER BY issue.updated DESC, issue.key ASC"
-        ),
+        sql=("SELECT issue.key FROM jira.issues issue ORDER BY issue.updated DESC, issue.key ASC"),
         policies=(),
     )
     keys = [
-        c.name
-        for term in plan.ast.args["order"].expressions
-        for c in term.find_all(exp.Column)
+        c.name for term in plan.ast.args["order"].expressions for c in term.find_all(exp.Column)
     ]
     assert keys.count("key") == 1
 
@@ -310,10 +298,7 @@ def test_the_fallback_ordering_is_appended_after_the_callers_own(parser):
     """The caller's sort must stay primary; the tiebreaker only breaks ties."""
     plan = build_plan(
         parser,
-        sql=(
-            "SELECT issue.key, issue.status FROM jira.issues issue "
-            "ORDER BY issue.status DESC"
-        ),
+        sql=("SELECT issue.key, issue.status FROM jira.issues issue ORDER BY issue.status DESC"),
         policies=(),
     )
     terms = plan.ast.args["order"].expressions

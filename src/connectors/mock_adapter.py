@@ -31,6 +31,7 @@ on request 6 instead of serving from cache.
 import asyncio
 import hashlib
 import json
+from collections.abc import Callable
 from typing import Any
 
 from src.config import get_settings
@@ -40,47 +41,28 @@ from src.connectors.base import (
     CapabilityModel,
     FetchRequest,
 )
-from src.connectors.errors import FailureMode, classify
-from src.connectors.pagination import strategy_for
+from src.connectors.errors import HTTP_STATUS_FOR_CODE, FailureMode, classify
+from src.connectors.mock_transport import MockTransport
+from src.connectors.pagination import Page
+from src.connectors.request import EndpointSpec
+from src.connectors.response import RateLimitDialect
 from src.connectors.synthetic import synthetic_rows
+from src.connectors.validate import validate_request
 from src.governance.cache import CacheStatus, FreshnessCacheManager
 from src.governance.clock import NowMs, wall_clock_ms
 from src.governance.ratelimit import RateLimitPolicy, TokenBucketRateLimiter
 from src.governance.secrets import SecretsManagerClient
 from src.models.errors import ApiError, ErrorCode
 
-#: HTTP status per error code, from design-doc §8.1 — the published table.
-#:
-#: A lookup rather than an inline conditional, because the conditional it
-#: replaced (``504 if SOURCE_TIMEOUT else 502``) quietly gave
-#: ``CONNECTOR_AUTH_ERROR`` a 502 while every locked document says 403. HLD §9
-#: makes the error vocabulary a provenance rail that must be identical across
-#: the design doc, the HLD and every phase spec; a rail is much harder to break
-#: from a table that states it than from an ``else`` branch (ADR-029).
-HTTP_STATUS_FOR_CODE = {
-    ErrorCode.SOURCE_TIMEOUT: 504,
-    ErrorCode.RATE_LIMIT_EXHAUSTED: 429,
-    ErrorCode.CONNECTOR_AUTH_ERROR: 403,
-    ErrorCode.CONNECTOR_NOT_ENABLED: 403,
-    ErrorCode.ENTITLEMENT_DENIED: 403,
-    ErrorCode.STALE_DATA: 200,
-}
 
-#: Operators the mock datasets can evaluate in memory.
-_COMPARATORS = {
-    "=": lambda row, value: row == value,
-    ">": lambda row, value: row > value,
-    ">=": lambda row, value: row >= value,
-    "<": lambda row, value: row < value,
-    "<=": lambda row, value: row <= value,
-}
-
-
-class MockConnectorAdapter(BaseConnectorAdapter):
+class MockConnectorAdapter(MockTransport, BaseConnectorAdapter):
     """A deterministic in-memory source wearing the real connector contract."""
 
-    #: The resource this adapter serves, e.g. ``pull_requests``.
-    resource: str
+    #: Datasets this adapter can serve, keyed by resource. The one thing that
+    #: genuinely must be code: the rows a live adapter would receive over the
+    #: wire. Everything else about a resource — its endpoint, its filters, its
+    #: rate-limit dialect — arrives as a seeded row.
+    DATASETS: dict[str, Callable[[], list[dict[str, Any]]]] = {}
 
     #: What a call to this source costs, in milliseconds, before
     #: ``MOCK_LATENCY_SCALE`` is applied. Overridden per adapter.
@@ -100,7 +82,10 @@ class MockConnectorAdapter(BaseConnectorAdapter):
 
     def __init__(
         self,
+        resource: str,
         capabilities: dict[str, Any],
+        endpoint: EndpointSpec,
+        rate_limit: RateLimitDialect,
         cache: FreshnessCacheManager,
         limiter: TokenBucketRateLimiter,
         secrets: SecretsManagerClient,
@@ -108,6 +93,17 @@ class MockConnectorAdapter(BaseConnectorAdapter):
         now_ms: NowMs = wall_clock_ms,
         latency_scale: float | None = None,
     ) -> None:
+        if resource not in self.DATASETS:
+            raise ValueError(
+                f"{type(self).__name__} serves no dataset for resource {resource!r}; "
+                f"known: {', '.join(sorted(self.DATASETS)) or '(none)'}"
+            )
+        #: Instance state, not a class attribute: one class serves every resource
+        #: its connector declares, so a second GitHub endpoint is a row rather
+        #: than a subclass.
+        self.resource = resource
+        self.endpoint = endpoint
+        self.rate_limit = rate_limit
         self._capabilities = CapabilityModel.from_dict(capabilities)
         self._cache = cache
         self._limiter = limiter
@@ -133,8 +129,13 @@ class MockConnectorAdapter(BaseConnectorAdapter):
         }
 
     def dataset(self) -> list[dict[str, Any]]:
-        """The rows this source would return unfiltered. Overridden per adapter."""
-        raise NotImplementedError
+        """The rows this resource would return unfiltered.
+
+        Looked up rather than overridden, so one class can serve several
+        resources. ``__init__`` already refused an unknown one, which is why
+        this cannot fail here.
+        """
+        return self.DATASETS[self.resource]()
 
     def dataset_for(self, tenant_id: str) -> list[dict[str, Any]]:
         """The rows *this tenant* would see.
@@ -172,7 +173,7 @@ class MockConnectorAdapter(BaseConnectorAdapter):
 
     async def fetch(self, request: FetchRequest) -> AdapterResponse:
         self._raise_if_forced()
-        self._validate(request)
+        validate_request(self.connector_type, self._capabilities, request)
 
         key = self._cache.key(
             request.tenant_id, request.entitlement_scope, self.connector_type, request
@@ -191,21 +192,32 @@ class MockConnectorAdapter(BaseConnectorAdapter):
         # `served="live"` again. That breaks DoD §2 hard part 4, whose whole
         # demonstration is the knob flipping `served` between live and cache.
         if lookup.status is CacheStatus.STALE and request.max_staleness_ms > 0:
-            # A conditional request. Computing what the source *would* return
-            # costs no downstream call in a mock and no token by contract — a
-            # real 304 transfers no body either.
-            candidate = self._page(request)
-            revalidated = await self._cache.revalidate(key, self._etag(candidate.rows))
-            if revalidated.is_hit:
-                return self._from_cache(revalidated.entry, revalidated=True)
+            # A conditional request: `If-None-Match`, answered `304` with no
+            # body. Authenticated, because a real conditional GET is — but it
+            # spends no token, which is the guarantee this branch exists for and
+            # which GitHub's own contract grants (a 304 is not charged).
+            probe = self._outbound(request, if_none_match=lookup.entry.etag)
+            answer = await self._transport(probe, request.tenant_id)
+            if answer.is_not_modified:
+                revalidated = await self._cache.revalidate(key, lookup.entry.etag)
+                if revalidated.is_hit:
+                    return self._from_cache(revalidated.entry, revalidated=True)
 
         # --- 2. consume a token -------------------------------------------
-        await self._limiter.consume(
-            request.tenant_id, self.connector_type, self._rate_limit_policy(request.tenant_id)
-        )
+        #
+        # `try_consume`, not `consume`: this adapter needs the decision on BOTH
+        # branches — the allowed one feeds the source's `X-RateLimit-*` headers,
+        # and the denied one is rendered in the source's own refusal shape
+        # before being normalised. There is one arithmetic, in Redis, so the
+        # budget the source reports and the one the envelope reports cannot
+        # drift.
+        policy = self._rate_limit_policy(request.tenant_id)
+        decision = await self._limiter.try_consume(request.tenant_id, self.connector_type, policy)
+        if not decision.allowed:
+            raise self._exhausted(request.tenant_id, policy, decision)
 
         # --- 3. resolve the tenant's credential ---------------------------
-        self._secrets.resolve(self._secret_ref(request.tenant_id))
+        credential = self._secrets.resolve(self._secret_ref(request.tenant_id))
 
         # --- 3b. the round trip a real source would cost ------------------
         #
@@ -224,11 +236,26 @@ class MockConnectorAdapter(BaseConnectorAdapter):
         if self._latency_s:
             await asyncio.sleep(self._latency_s)
 
-        # --- 4 + 5. filter and paginate -----------------------------------
-        page = self._page(request)
+        # --- 4 + 5. build the call, send it, parse what comes back --------
+        outbound = self._outbound(request, credential=credential)
+        self.last_request = outbound
+        answer = await self._transport(outbound, request.tenant_id, policy, decision)
+        self.last_response = answer
+        page = self.parse_response(answer)
+        page = Page(
+            rows=self._project(page.rows, request.projection),
+            next_cursor=page.next_cursor,
+            has_more=page.has_more,
+        )
 
         # --- 6. record and cache ------------------------------------------
-        etag = self._etag(page.rows)
+        #
+        # The ETag is the SOURCE's, read off the response, not one we compute
+        # over the parsed rows. That is what makes the conditional request in
+        # the branch above meaningful: `If-None-Match` has to carry a validator
+        # the source itself issued, or it can never match and the 304 path is
+        # dead code that still passes its tests.
+        etag = answer.header("ETag")
         entry = await self._cache.set(
             key,
             page.rows,
@@ -246,22 +273,6 @@ class MockConnectorAdapter(BaseConnectorAdapter):
 
     # -- steps 4 and 5 ----------------------------------------------------
 
-    def _page(self, request: FetchRequest):
-        rows = self._apply_predicates(self.dataset_for(request.tenant_id), request.predicates)
-        rows = self._project(rows, request.projection)
-        return strategy_for(self._capabilities.pagination).paginate(
-            rows, limit=request.limit, page=request.page
-        )
-
-    def _apply_predicates(
-        self, rows: list[dict[str, Any]], predicates: dict[str, Any] | Any
-    ) -> list[dict[str, Any]]:
-        for column, condition in predicates.items():
-            op, value = self._as_op_value(condition)
-            compare = _COMPARATORS[op]
-            rows = [row for row in rows if column in row and compare(row[column], value)]
-        return rows
-
     @staticmethod
     def _project(rows: list[dict[str, Any]], projection) -> list[dict[str, Any]]:
         """Narrow to the requested columns.
@@ -273,72 +284,6 @@ class MockConnectorAdapter(BaseConnectorAdapter):
         if not wanted:
             return rows
         return [{c: row[c] for c in wanted if c in row} for row in rows]
-
-    # -- step 0 -----------------------------------------------------------
-
-    def _validate(self, request: FetchRequest) -> None:
-        """Reject anything the capability model does not declare.
-
-        **Rejected, not silently ignored**, for predicates *and* projections.
-
-        For a predicate, a silent drop would return rows the caller did not ask
-        for — and in Phase 2 that predicate may be the RLS filter, which turns a
-        silent drop from a bug into a data leak.
-
-        For a projection the failure is quieter and just as bad. DoD §4
-        non-negotiable #2 requires the engine to fetch
-        ``projection ∪ every WHERE/ORDER BY column`` so that re-applying
-        predicates authoritatively cannot drop a valid row. If a column in that
-        union were silently omitted here, the engine would re-filter on data it
-        never fetched and discard rows the caller was entitled to — wrong
-        results, invisible at this boundary.
-        """
-        unknown = [c for c in request.projection if c not in self._capabilities.columns]
-        if unknown:
-            raise ApiError(
-                code=ErrorCode.ENTITLEMENT_DENIED,
-                http=400,
-                message=(
-                    f"{self.connector_type} has no column(s) {', '.join(sorted(unknown))}; "
-                    f"available: {', '.join(self._capabilities.columns)}"
-                ),
-            )
-
-        for column, condition in request.predicates.items():
-            op, _ = self._as_op_value(condition)
-            if op not in _COMPARATORS:
-                raise ApiError(
-                    code=ErrorCode.ENTITLEMENT_DENIED,
-                    http=400,
-                    message=f"{self.connector_type}: unknown operator {op!r} on {column!r}",
-                )
-            if not self._capabilities.supports(column, op):
-                raise ApiError(
-                    code=ErrorCode.ENTITLEMENT_DENIED,
-                    http=400,
-                    message=(
-                        f"{self.connector_type} cannot filter {column!r} with {op!r}; "
-                        f"this predicate must not be pushed down"
-                    ),
-                )
-
-        missing = [c for c in self._capabilities.required_columns() if c not in request.predicates]
-        if missing:
-            raise ApiError(
-                code=ErrorCode.ENTITLEMENT_DENIED,
-                http=400,
-                message=(
-                    f"{self.connector_type} requires a predicate on {', '.join(missing)}; "
-                    f"the upstream API has no endpoint without it"
-                ),
-            )
-
-    @staticmethod
-    def _as_op_value(condition: Any) -> tuple[str, Any]:
-        """Accept ``{"col": value}`` as shorthand for ``{"col": ("=", value)}``."""
-        if isinstance(condition, tuple | list) and len(condition) == 2:
-            return str(condition[0]), condition[1]
-        return "=", condition
 
     # -- control-plane lookups --------------------------------------------
 

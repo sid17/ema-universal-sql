@@ -131,3 +131,21 @@ def classify(mode: FailureMode) -> Classification:
             f"unmapped connector failure mode {mode!r}; "
             f"add it to DEFAULT_ERROR_MAPPING with an explicit failure_type"
         ) from None
+
+
+#: HTTP status per error code, from design-doc §8.1 — the published table.
+#:
+#: A lookup rather than an inline conditional, because the conditional it
+#: replaced (``504 if SOURCE_TIMEOUT else 502``) quietly gave
+#: ``CONNECTOR_AUTH_ERROR`` a 502 while every locked document says 403. HLD §9
+#: makes the error vocabulary a provenance rail that must be identical across
+#: the design doc, the HLD and every phase spec; a rail is much harder to break
+#: from a table that states it than from an ``else`` branch (ADR-029).
+HTTP_STATUS_FOR_CODE = {
+    ErrorCode.SOURCE_TIMEOUT: 504,
+    ErrorCode.RATE_LIMIT_EXHAUSTED: 429,
+    ErrorCode.CONNECTOR_AUTH_ERROR: 403,
+    ErrorCode.CONNECTOR_NOT_ENABLED: 403,
+    ErrorCode.ENTITLEMENT_DENIED: 403,
+    ErrorCode.STALE_DATA: 200,
+}

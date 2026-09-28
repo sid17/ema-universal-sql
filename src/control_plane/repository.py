@@ -15,7 +15,8 @@ Method                               Consumer                                Pha
 ``get_tenant``                       the tenant-status gate (``deps.py``)    P0
 ``get_rate_limit_policy``            ``TokenBucketRateLimiter`` sizing       P1
 ``get_tenant_connectors``            the ``CONNECTOR_NOT_ENABLED`` gate      P2
-``get_capabilities``                 ``QueryPlanner`` capability check       P2
+``list_connectors``                  ``ConnectorRegistry`` catalog+adapters  P6
+``get_connector``                    one resource's endpoint + capabilities  P6
 ``get_policies``                     ``EntitlementEngine``                   P2
 ===================================  ======================================  =====
 
@@ -159,22 +160,44 @@ class ControlPlaneRepository:
 
         return self._cache.get_or_load(("tenant_connectors", tenant_id), load)
 
-    def get_capabilities(self, connector_type: str) -> dict[str, Any] | None:
-        """The connector's capability model — what it can be asked to filter on.
+    #: Columns every connector read selects. One list, so a caller cannot get a
+    #: row from :meth:`get_connector` shaped differently from :meth:`list_connectors`.
+    _CONNECTOR_COLUMNS = "connector_type, resource, version, endpoint, rate_limit, capabilities"
 
-        Global, not per-tenant: capabilities describe the upstream API, and two
-        tenants querying the same connector get the same pushdown options.
+    def list_connectors(self) -> list[dict[str, Any]]:
+        """Every seeded ``(connector_type, resource)`` — one row per API call.
+
+        The registry builds the catalog and the adapters from **these rows**,
+        not from a list of Python classes. That is what makes a second GitHub
+        endpoint one more entry in ``config/connectors/github.yaml`` and no code
+        at all: the class is selected by ``connector_type``, everything else
+        about the call comes from here.
+        """
+
+        def load() -> list[dict[str, Any]]:
+            return self._query(
+                f"SELECT {self._CONNECTOR_COLUMNS} FROM connectors "
+                "ORDER BY connector_type, resource"
+            )
+
+        return self._cache.get_or_load(("connectors",), load)
+
+    def get_connector(self, connector_type: str, resource: str) -> dict[str, Any] | None:
+        """One connector resource: its endpoint, its rate-limit dialect, its capabilities.
+
+        Global, not per-tenant: all three describe the upstream API, and two
+        tenants querying the same resource get the same pushdown options.
         """
 
         def load() -> dict[str, Any] | None:
             rows = self._query(
-                "SELECT connector_type, version, capabilities "
-                "FROM connectors WHERE connector_type = %s",
-                (connector_type,),
+                f"SELECT {self._CONNECTOR_COLUMNS} FROM connectors "
+                "WHERE connector_type = %s AND resource = %s",
+                (connector_type, resource),
             )
             return rows[0] if rows else None
 
-        return self._cache.get_or_load(("capabilities", connector_type), load)
+        return self._cache.get_or_load(("connector", connector_type, resource), load)
 
     def get_policies(
         self,
@@ -215,9 +238,7 @@ class ControlPlaneRepository:
                 (tenant_id, list(connector_key), list(resource_key)),
             )
 
-        return self._cache.get_or_load(
-            ("policies", tenant_id, connector_key, resource_key), load
-        )
+        return self._cache.get_or_load(("policies", tenant_id, connector_key, resource_key), load)
 
     def get_rate_limit_policy(self, tenant_id: str, connector_type: str) -> dict[str, Any] | None:
         """The token-bucket sizing for this tenant against this connector.

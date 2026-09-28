@@ -121,6 +121,16 @@ class PaginationStrategy(ABC):
     def next_token(self, consumed: int) -> str:
         """The token that asks for the rows after ``consumed``."""
 
+    @abstractmethod
+    def wire_value(self, page: str | None) -> str | None:
+        """What this page token looks like **on the wire**, or ``None`` to omit it.
+
+        The other half of "strategy ⊕ placement": ``token_option`` says *where*
+        the token goes, this says *what* is actually sent. The two strategies
+        disagree on both counts — GitHub omits the cursor entirely on the first
+        page, where a real Jira client always sends ``startAt=0``.
+        """
+
 
 class CursorStrategy(PaginationStrategy):
     """GitHub-style: an opaque cursor pointing past the last row returned."""
@@ -129,6 +139,13 @@ class CursorStrategy(PaginationStrategy):
 
     def next_token(self, consumed: int) -> str:
         return encode_token(self.name, consumed)
+
+    def wire_value(self, page: str | None) -> str | None:
+        """The opaque cursor, verbatim — and nothing at all on the first page."""
+        if page is None:
+            return None
+        decode_token(page, self.name)  # reject a foreign token before sending it
+        return page
 
 
 class OffsetStrategy(PaginationStrategy):
@@ -154,6 +171,10 @@ class OffsetStrategy(PaginationStrategy):
         """
         return 0 if page is None else decode_token(page, OffsetStrategy.name)
 
+    def wire_value(self, page: str | None) -> str | None:
+        """Always sent, ``startAt=0`` included — which is what a real Jira client does."""
+        return str(self.start_at(page))
+
 
 _STRATEGIES: dict[str, type[PaginationStrategy]] = {
     CursorStrategy.name: CursorStrategy,
@@ -172,6 +193,5 @@ def strategy_for(spec: PaginationSpec) -> PaginationStrategy:
         return _STRATEGIES[spec.strategy](spec.page_size)
     except KeyError:
         raise ValueError(
-            f"unknown pagination strategy {spec.strategy!r}; "
-            f"expected one of {sorted(_STRATEGIES)}"
+            f"unknown pagination strategy {spec.strategy!r}; expected one of {sorted(_STRATEGIES)}"
         ) from None

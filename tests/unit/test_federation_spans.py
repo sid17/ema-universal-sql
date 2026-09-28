@@ -63,7 +63,7 @@ async def test_the_two_connector_spans_overlap_in_time(parser, adapters, spans):
     opened inside the `asyncio.gather` closure, so their real wall-clock
     intervals intersect — and that intersection is the evidence.
     """
-    adapters["jira"] = SlowAdapter(adapters["jira"], delay_s=0.05)
+    adapters[("jira", "issues")] = SlowAdapter(adapters[("jira", "issues")], delay_s=0.05)
     await run(adapters, make_plan(parser))
 
     github = span_named(spans, "connector.github")
@@ -72,9 +72,7 @@ async def test_the_two_connector_spans_overlap_in_time(parser, adapters, spans):
     assert jira.start_time < github.end_time
 
 
-async def test_the_span_records_the_same_elapsed_ms_the_envelope_reports(
-    parser, adapters, spans
-):
+async def test_the_span_records_the_same_elapsed_ms_the_envelope_reports(parser, adapters, spans):
     """One `perf_counter` pair, three views (span, histogram, envelope).
 
     A second timer inside the span would produce a number that could disagree
@@ -94,7 +92,7 @@ async def test_the_span_still_closes_when_the_source_times_out(parser, adapters,
     A span that leaks on the timeout path would leave exactly the trace a
     reviewer reaches for during an incident missing its slowest bar.
     """
-    adapters["jira"] = SlowAdapter(adapters["jira"], delay_s=0.5)
+    adapters[("jira", "issues")] = SlowAdapter(adapters[("jira", "issues")], delay_s=0.5)
     await run(adapters, make_plan(parser), deadline_ms=100)
 
     jira = span_named(spans, "connector.jira")
@@ -104,7 +102,7 @@ async def test_the_span_still_closes_when_the_source_times_out(parser, adapters,
 
 async def test_the_span_still_closes_when_the_source_raises(parser, adapters, spans):
     """Same guarantee on the hard-failure path, which raises out of `execute`."""
-    adapters["jira"].fail_next(FailureMode.AUTH)
+    adapters[("jira", "issues")].fail_next(FailureMode.AUTH)
     with pytest.raises(ApiError):
         await run(adapters, make_plan(parser))
 
@@ -127,10 +125,11 @@ async def test_a_source_that_is_never_called_gets_no_span(parser, adapters, span
 async def test_the_connector_histogram_records_every_outcome(parser, adapters, spans):
     """Timeouts count too — a histogram that only sees successes reports a P95
     better than the one users actually get."""
-    before = REGISTRY.get_sample_value(
-        f"{CONNECTOR_FETCH_DURATION_NAME}_count", {"connector": "jira"}
-    ) or 0.0
-    adapters["jira"].fail_next(FailureMode.TIMEOUT)
+    before = (
+        REGISTRY.get_sample_value(f"{CONNECTOR_FETCH_DURATION_NAME}_count", {"connector": "jira"})
+        or 0.0
+    )
+    adapters[("jira", "issues")].fail_next(FailureMode.TIMEOUT)
 
     await run(adapters, make_plan(parser))
 
@@ -143,13 +142,15 @@ async def test_the_connector_histogram_records_every_outcome(parser, adapters, s
 async def test_a_skipped_source_is_not_counted_in_the_histogram(parser, adapters, spans):
     """A 0ms sample for a fetch that did not happen would drag the histogram
     down and make a default-denied query look like a fast one."""
-    before = REGISTRY.get_sample_value(
-        f"{CONNECTOR_FETCH_DURATION_NAME}_count", {"connector": "jira"}
-    ) or 0.0
+    before = (
+        REGISTRY.get_sample_value(f"{CONNECTOR_FETCH_DURATION_NAME}_count", {"connector": "jira"})
+        or 0.0
+    )
 
     await run(adapters, make_plan(parser, roles=("contractor",)))
 
-    after = REGISTRY.get_sample_value(
-        f"{CONNECTOR_FETCH_DURATION_NAME}_count", {"connector": "jira"}
-    ) or 0.0
+    after = (
+        REGISTRY.get_sample_value(f"{CONNECTOR_FETCH_DURATION_NAME}_count", {"connector": "jira"})
+        or 0.0
+    )
     assert after == before

@@ -1,11 +1,17 @@
-# Jira issues — connector definition. See github.yaml for the format.
+# Jira — connector definition. See github.yaml for the format.
 #
-# This is the more interesting of the two capability models, in two ways:
+# This is the more interesting of the two capability models, in three ways:
 #   1. every filter is OPTIONAL, unlike GitHub's required `repo`, so the two
 #      together prove the contract handles both requirements;
 #   2. `updated` supports RANGE operators while every other column is equality
 #      only — the asymmetry that makes `supports(column, op)` a two-argument
-#      question rather than a membership test.
+#      question rather than a membership test. It is also the only place a
+#      non-equality operator is visibly USED: it renders as `updated >= "..."`
+#      inside the JQL expression;
+#   3. every filter injects into `jql`, not `query`. Real Jira search has no
+#      per-field query parameter — the filters compose into one expression. A
+#      connector contract that cannot express that would render a call no live
+#      adapter could send.
 #
 # It is also the source carrying `assignee` (the RLS subject) and
 # `reporter_email` (the CLS-masked column), so Phase 2's entitlement work lands
@@ -13,48 +19,82 @@
 
 connector_type: jira
 version: "1.0.0"
-resource: issues
 
-capabilities:
-  columns:
-    - key
-    - status
-    - assignee
-    - reporter_email
-    - project
-    - updated
+api:
+  # A single site here. A live adapter would read the host from the grant, since
+  # an Atlassian site is per-customer; nothing else in this file would change.
+  host: ema.atlassian.net
+  # Basic base64-encodes the stored credential WHOLE, because a Jira credential
+  # *is* the pair `email:api_token` — the account is credential material, not
+  # separate configuration. Encoding only a token would render a header no live
+  # adapter could send.
+  auth_scheme: basic
+  headers:
+    Accept: application/json
 
-  key_columns:
-    status:
-      require: optional
-      ops: ["="]
-      option: {inject_into: query, field: status}
+  # Same fact as GitHub's, said differently: a 429 with a Retry-After rather
+  # than a 403 with the remaining count at zero.
+  rate_limit:
+    limit_header: X-RateLimit-Limit
+    remaining_header: X-RateLimit-Remaining
+    reset_header: X-RateLimit-Reset
+    exhausted_status: 429
+    sends_retry_after: true
+    exhausted_body:
+      errorMessages:
+        - Rate limit exceeded.
+      errors: {}
 
-    # The RLS subject: Phase 2 compiles `assignee = :user` into the plan and
-    # pushes it down through this capability, so forbidden rows are never
-    # fetched rather than fetched-then-dropped.
-    assignee:
-      require: optional
-      ops: ["="]
-      option: {inject_into: query, field: assignee}
+resources:
+  issues:
+    endpoint:
+      method: GET
+      # One endpoint for every filter — the opposite of GitHub's per-repo path.
+      path: /rest/api/3/search
+      # Where the composed `inject_into: jql` placements are sent.
+      expression_param: jql
 
-    project:
-      require: optional
-      ops: ["="]
-      option: {inject_into: query, field: project}
+    capabilities:
+      columns:
+        - key
+        - status
+        - assignee
+        - reporter_email
+        - project
+        - updated
 
-    updated:
-      require: optional
-      ops: ["=", ">", ">=", "<", "<="]
-      option: {inject_into: query, field: updated}
+      key_columns:
+        status:
+          require: optional
+          ops: ["="]
+          option: {inject_into: jql, field: status}
 
-  sortable:
-    - updated
+        # The RLS subject: Phase 2 compiles `assignee = :user` into the plan and
+        # pushes it down through this capability, so forbidden rows are never
+        # fetched rather than fetched-then-dropped.
+        assignee:
+          require: optional
+          ops: ["="]
+          option: {inject_into: jql, field: assignee}
 
-  # Offset pagination (startAt / total). Different strategy, same contract —
-  # the decoupling this phase exists to prove.
-  pagination:
-    strategy: offset
-    page_size: 100
-    token_option: {inject_into: query, field: startAt}
-    stop: returned<page_size
+        project:
+          require: optional
+          ops: ["="]
+          option: {inject_into: jql, field: project}
+
+        updated:
+          require: optional
+          ops: ["=", ">", ">=", "<", "<="]
+          option: {inject_into: jql, field: updated}
+
+      sortable:
+        - updated
+
+      # Offset pagination (startAt / total). Different strategy, same contract —
+      # the decoupling this connector pair exists to prove.
+      pagination:
+        strategy: offset
+        page_size: 100
+        token_option: {inject_into: query, field: startAt}
+        size_option: {inject_into: query, field: maxResults}
+        stop: returned<page_size

@@ -139,13 +139,13 @@ async def test_a_source_exceeding_its_budget_becomes_a_timeout(parser, adapters)
     asserts that `wait_for` cancels an in-flight fetch rather than that our own
     exception handler works.
     """
-    adapters["jira"] = SlowAdapter(adapters["jira"], delay_s=0.5)
+    adapters[("jira", "issues")] = SlowAdapter(adapters[("jira", "issues")], delay_s=0.5)
     result = await run(adapters, make_plan(parser), deadline_ms=100)
 
     by_connector = {f.connector_type: f for f in result.fetches}
     assert by_connector["jira"].state == "timeout"
     assert by_connector["jira"].error.code is ErrorCode.SOURCE_TIMEOUT
-    assert adapters["jira"].started, "the fetch never started; this tested nothing"
+    assert adapters[("jira", "issues")].started, "the fetch never started; this tested nothing"
 
 
 async def test_a_timeout_does_not_cancel_the_healthy_sibling(parser, adapters):
@@ -156,7 +156,7 @@ async def test_a_timeout_does_not_cancel_the_healthy_sibling(parser, adapters):
     converting a `partial` answer into an `error` one. That is the trichotomy
     collapsing.
     """
-    adapters["jira"] = SlowAdapter(adapters["jira"], delay_s=0.5)
+    adapters[("jira", "issues")] = SlowAdapter(adapters[("jira", "issues")], delay_s=0.5)
     result = await run(adapters, make_plan(parser), deadline_ms=100)
 
     github = next(f for f in result.fetches if f.connector_type == "github")
@@ -180,7 +180,7 @@ async def test_an_auth_failure_is_a_hard_stop_not_a_partial(parser, adapters):
     """A permanently broken connector presented as merely `partial` would tell
     the caller to retry something that cannot succeed, and would make a revoked
     credential look like a slow API."""
-    adapters["jira"].fail_next(FailureMode.AUTH)
+    adapters[("jira", "issues")].fail_next(FailureMode.AUTH)
     with pytest.raises(ApiError) as raised:
         await run(adapters, make_plan(parser))
     assert raised.value.code is ErrorCode.CONNECTOR_AUTH_ERROR
@@ -194,7 +194,7 @@ async def test_a_throttle_is_a_hard_stop_too(parser, adapters):
     quietly smaller result set. "Retryable" and "may be served as partial" are
     different questions.
     """
-    adapters["github"].fail_next(FailureMode.THROTTLED)
+    adapters[("github", "pull_requests")].fail_next(FailureMode.THROTTLED)
     with pytest.raises(ApiError) as raised:
         await run(adapters, make_plan(parser))
     assert raised.value.code is ErrorCode.RATE_LIMIT_EXHAUSTED
@@ -202,7 +202,7 @@ async def test_a_throttle_is_a_hard_stop_too(parser, adapters):
 
 async def test_a_forced_timeout_degrades_instead_of_raising(parser, adapters):
     """The one degradable code — the other side of the two tests above."""
-    adapters["jira"].fail_next(FailureMode.TIMEOUT)
+    adapters[("jira", "issues")].fail_next(FailureMode.TIMEOUT)
     result = await run(adapters, make_plan(parser))
     assert {f.state for f in result.failed} == {"timeout"}
 

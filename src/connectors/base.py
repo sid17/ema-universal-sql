@@ -4,9 +4,10 @@ Two ideas adopted from ``airbyte-python-cdk`` (research Card 2), because they
 are what let one contract describe two sources that page and filter differently:
 
 1. **One injection primitive.** :class:`RequestOption` says *where* a value goes
-   in the outgoing call — query string, header, body or path. The same primitive
-   carries a pushed-down predicate, the page token and the page size, so there
-   is no separate vocabulary per concern.
+   in the outgoing call — query string, header, body, path, or (Jira) a
+   composed JQL expression. The same primitive carries a pushed-down predicate,
+   the page token and the page size, so there is no separate vocabulary per
+   concern.
 2. **A capability is (predicate support) + (where to inject it).** Knowing that
    GitHub can filter on ``state`` is useless without knowing it goes in the
    query string while ``repo`` goes in the path. :class:`CapabilityModel` carries
@@ -23,12 +24,35 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 #: Where a value is injected into the outgoing call.
-InjectInto = Literal["query", "header", "body", "path"]
+#:
+#: ``jql`` is the compound one, and it exists because Jira has no per-field query
+#: parameter: every filter composes into a single ``jql=`` expression. Modelling
+#: it as ``query`` would have been simpler and would have made the rendered call
+#: a fiction — and a connector contract that cannot express a source's real
+#: request shape is a contract that will not survive the first live adapter.
+InjectInto = Literal["query", "header", "body", "path", "jql"]
 
 #: Whether a source *demands* a predicate on a column, or merely accepts one.
 #: ``required`` is load-bearing: GitHub's ``repo`` is a path segment, so a fetch
 #: without it has no URL to call at all.
 Requirement = Literal["required", "optional"]
+
+
+def header_value(headers: Mapping[str, str], name: str) -> str | None:
+    """One header, matched case-insensitively — because HTTP is.
+
+    Not fussiness. ASGI, httpx and most real clients hand headers back
+    lowercased, so a live transport sees ``if-none-match`` and ``link`` where
+    the mock wrote ``If-None-Match`` and ``Link``. A plain ``dict.get`` then
+    returns ``None``: the conditional request never matches and pagination stops
+    after one page, both silently, with every in-memory test still green.
+    ``tests/unit/test_transport_swap.py`` is what found this.
+    """
+    wanted = name.lower()
+    for key, value in headers.items():
+        if key.lower() == wanted:
+            return value
+    return None
 
 
 @dataclass(frozen=True)
@@ -74,6 +98,12 @@ class PaginationSpec:
     page_size: int
     token_option: RequestOption
     stop: str
+    size_option: RequestOption
+    """Where the *page size* is injected — GitHub's ``per_page``, Jira's ``maxResults``.
+
+    Required rather than defaulted: every paging API names this parameter, and a
+    default would mean one source silently sending another source's spelling.
+    """
 
     @classmethod
     def from_dict(cls, raw: Mapping[str, Any]) -> "PaginationSpec":
@@ -82,6 +112,7 @@ class PaginationSpec:
             page_size=int(raw["page_size"]),
             token_option=RequestOption.from_dict(raw["token_option"]),
             stop=raw["stop"],
+            size_option=RequestOption.from_dict(raw["size_option"]),
         )
 
 

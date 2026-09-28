@@ -32,6 +32,7 @@ from src.gateway.handlers import install_error_handlers
 from src.gateway.routes import router
 from src.governance.audit import AuditLogger
 from src.governance.cache import FreshnessCacheManager
+from src.governance.failure_hooks import FailureHookStore
 from src.governance.ratelimit import TokenBucketRateLimiter
 from src.governance.secrets import SecretsManagerClient
 from src.observability.logging import RequestLogMiddleware, configure_logging
@@ -76,7 +77,13 @@ def _build_runner(settings, pool, redis_pipeline, repository, duckdb_pool) -> Qu
     cache = FreshnessCacheManager(redis_pipeline, ttl_ms=settings.CACHE_TTL_MS)
     limiter = TokenBucketRateLimiter(redis_pipeline)
     secrets = SecretsManagerClient(repository)
-    registry = ConnectorRegistry(repository, cache, limiter, secrets)
+    # Wired ONLY in TEST_MODE, so outside it the forced-failure hook is not
+    # merely refused by the route — it is absent from the fetch path entirely
+    # and costs nothing per request. In test mode it lives in Redis rather than
+    # in this process, because the image runs eight workers; see
+    # src/governance/failure_hooks.py.
+    failures = FailureHookStore(redis_pipeline) if settings.TEST_MODE else None
+    registry = ConnectorRegistry(repository, cache, limiter, secrets, failures=failures)
     return QueryPipelineRunner(
         registry=registry,
         repository=repository,

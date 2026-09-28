@@ -20,8 +20,7 @@ from src.pipeline.runner import QueryPipelineRunner
 from tests.unit.conftest import (
     CANONICAL_SQL,
     CLS_DEMO_SQL,
-    GITHUB_CAPABILITIES,
-    JIRA_CAPABILITIES,
+    connector_rows,
     persona,
 )
 from tests.unit.test_audit import FakePool
@@ -40,13 +39,19 @@ class FakeRepository:
     def __init__(self, control_plane, policies) -> None:
         self._control_plane = control_plane
         self.policies = list(policies)
-        self.capabilities = {
-            "github": {"capabilities": GITHUB_CAPABILITIES},
-            "jira": {"capabilities": JIRA_CAPABILITIES},
-        }
+        #: One row per (connector_type, resource), exactly as
+        #: `ControlPlaneRepository.list_connectors()` returns them — the registry
+        #: builds both the catalog and the adapters from these.
+        self.connectors = connector_rows()
 
-    def get_capabilities(self, connector_type):
-        return self.capabilities.get(connector_type)
+    def list_connectors(self):
+        return self.connectors
+
+    def get_connector(self, connector_type, resource):
+        for row in self.connectors:
+            if row["connector_type"] == connector_type and row["resource"] == resource:
+                return row
+        return None
 
     def get_policies(self, tenant_id, connectors, resources):
         return self.policies
@@ -233,7 +238,8 @@ async def test_an_unseeded_connector_makes_its_table_unknown(runner, control_pla
     """Half a seeded control plane should make the unseeded connector unknown,
     not take the service down. `make up` runs before `make seed`."""
     built = runner()
-    built._registry._repository.capabilities.pop("jira")
+    repository = built._registry._repository
+    repository.connectors = [r for r in repository.connectors if r["connector_type"] != "jira"]
     with pytest.raises(InvalidQueryError) as raised:
         await built.run(QueryRequest(sql=CANONICAL_SQL), persona("alice"), "t")
     assert raised.value.detail == "UnknownTable"

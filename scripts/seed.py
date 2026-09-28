@@ -27,7 +27,6 @@ A referenced tenant that does not exist is a loud failure (LAW 4).
 import os
 import secrets as stdlib_secrets
 import sys
-from pathlib import Path
 from typing import Any
 
 import psycopg
@@ -35,24 +34,8 @@ import yaml
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
+from scripts.seed_connectors import CONFIG_DIR, SeedError, load_yaml, seed_connectors
 from src.governance.secrets import SecretsManagerClient
-
-CONFIG_DIR = Path(__file__).resolve().parent.parent / "config"
-
-
-class SeedError(RuntimeError):
-    """Seeding failed. Never swallowed — a half-seeded control plane is worse
-    than an unseeded one, because the failures it causes look like app bugs."""
-
-
-def load_yaml(path: Path) -> dict[str, Any]:
-    if not path.exists():
-        raise SeedError(f"missing config file: {path}")
-    with path.open() as handle:
-        document = yaml.safe_load(handle)
-    if not isinstance(document, dict):
-        raise SeedError(f"{path} must contain a YAML mapping, got {type(document).__name__}")
-    return document
 
 
 def read_tenant_keys(conn) -> dict[str, str]:
@@ -78,28 +61,6 @@ def require_tenant(tenant_id: str, tenant_keys: dict[str, str], where: str) -> s
             f"{where} references tenant {tenant_id!r}, which does not exist. "
             f"Known tenants: {sorted(tenant_keys)}"
         ) from None
-
-
-def seed_connectors(conn) -> int:
-    """The global connector catalog — one YAML file per connector (ADR-013)."""
-    files = sorted((CONFIG_DIR / "connectors").glob("*.yaml"))
-    if not files:
-        raise SeedError(f"no connector definitions found in {CONFIG_DIR / 'connectors'}")
-
-    with conn.cursor() as cur:
-        for path in files:
-            doc = load_yaml(path)
-            for field in ("connector_type", "version", "capabilities"):
-                if field not in doc:
-                    raise SeedError(f"{path} is missing required field {field!r}")
-            cur.execute(
-                "INSERT INTO connectors (connector_type, version, capabilities) "
-                "VALUES (%s, %s, %s) "
-                "ON CONFLICT (connector_type) DO UPDATE SET "
-                "  version = EXCLUDED.version, capabilities = EXCLUDED.capabilities",
-                (doc["connector_type"], str(doc["version"]), Jsonb(doc["capabilities"])),
-            )
-    return len(files)
 
 
 def generate_token(tenant_id: str, connector_type: str) -> str:
@@ -313,8 +274,14 @@ def seed_rate_limits(conn, tenant_keys: dict[str, str]) -> int:
 
 
 def row_counts(conn) -> dict[str, int]:
-    tables = ("tenants", "connectors", "tenant_connector", "secrets",
-              "policies", "rate_limit_policies")
+    tables = (
+        "tenants",
+        "connectors",
+        "tenant_connector",
+        "secrets",
+        "policies",
+        "rate_limit_policies",
+    )
     counts = {}
     with conn.cursor() as cur:
         for table in tables:
@@ -332,7 +299,7 @@ def seed(database_url: str) -> dict[str, int]:
     """
     with psycopg.connect(database_url) as conn:
         tenant_keys = read_tenant_keys(conn)
-        seed_connectors(conn)               # must precede grants: FK target
+        seed_connectors(conn)  # must precede grants: FK target
         seed_grants(conn, tenant_keys)
         seed_policies(conn, tenant_keys)
         seed_rate_limits(conn, tenant_keys)
