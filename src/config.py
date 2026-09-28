@@ -44,6 +44,27 @@ class Settings(BaseSettings):
     # and `make demo` all show a source that costs what a remote source costs.
     MOCK_LATENCY_SCALE: float = 0.0
 
+    # --- load-test scaffolding (off by default) ------------------------------
+    # Rows per (source, cache key) for synthetic load tenants. 0 = OFF, and off
+    # is the default: a normal run and the entire test suite read the committed
+    # 20-row fixtures. See src/connectors/synthetic.py for why the load path
+    # does not simply grow those fixtures.
+    SYNTHETIC_ROWS: int = 0
+    #: Distinct cache keys per source. The load generator draws one per request,
+    #: so this is the key space a hit ratio is measured against.
+    SYNTHETIC_KEYSPACE: int = 20
+    #: Only tenants with this prefix get synthetic data. Everything else —
+    #: tenant_acme, tenant_globex, the demo — is untouched.
+    LOAD_TENANT_PREFIX: str = "tenant_load_"
+
+    # How many tenants keep a warm DuckDB instance per worker process.
+    # ~2.5 MiB each, so the default costs ~80 MiB per worker. Memory is
+    # `workers x DUCKDB_MAX_INSTANCES x instance size`; raise both together.
+    DUCKDB_MAX_INSTANCES: int = 32
+    #: Per-tenant ceiling. With spilling disabled (see duckdb_pool) a join that
+    #: exceeds this fails loudly rather than writing tenant rows to disk.
+    DUCKDB_MEMORY_LIMIT: str = "256MB"
+
     # Tracing sink. ADR-016 keeps this backend-free; "file" writes JSONL that
     # Phase 4 renders the waterfall from. "console" is for local debugging and
     # "none" is for the k6 run, where exporting is measurement overhead.

@@ -13,6 +13,7 @@ from sqlglot import exp
 from src.connectors.errors import FailureMode
 from src.entitlement.engine import EntitlementEngine
 from src.execution.arrow import build_table
+from src.execution.duckdb_pool import DuckDBPool
 from src.execution.federation import FederationEngine
 from src.execution.join import rebind_to_registered
 from src.models.errors import ApiError, ErrorCode
@@ -32,9 +33,24 @@ def make_plan(parser, sql=CANONICAL_SQL, user_id="alice", policies=POLICIES, rol
     return QueryPlanner().plan(entitled)
 
 
-async def run(adapters, plan, deadline_ms=5000, max_staleness_ms=60_000):
-    engine = FederationEngine(adapters, deadline_ms=deadline_ms)
-    return await engine.execute(plan, tenant_id="tenant_acme", max_staleness_ms=max_staleness_ms)
+async def run(adapters, plan, deadline_ms=5000, max_staleness_ms=60_000, pool=None):
+    """Execute one plan. Builds its own pool unless the caller supplies one.
+
+    A helper-local pool rather than the `duckdb_pool` fixture, because this
+    function is imported by `test_federation_spans.py` too and threading a
+    fixture through both call sites would buy nothing — the pool under test
+    here is the join's correctness, not its reuse.
+    """
+    owned = pool is None
+    pool = pool or DuckDBPool()
+    try:
+        engine = FederationEngine(adapters, deadline_ms=deadline_ms, pool=pool)
+        return await engine.execute(
+            plan, tenant_id="tenant_acme", max_staleness_ms=max_staleness_ms
+        )
+    finally:
+        if owned:
+            pool.close()
 
 
 class SlowAdapter:
@@ -91,9 +107,7 @@ async def test_the_adapter_received_the_entitled_predicate(parser, adapters):
     assert plan.sources["issue"].fetch_predicates()["assignee"] == ("=", "bob")
 
 
-async def test_carol_is_empty_because_of_the_join_not_because_she_has_no_data(
-    parser, adapters
-):
+async def test_carol_is_empty_because_of_the_join_not_because_she_has_no_data(parser, adapters):
     """The `empty` leg of the trichotomy, and why it is a real case.
 
     carol HAS an In-Progress issue (SUP-31) — one row comes back from Jira. Its

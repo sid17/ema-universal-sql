@@ -7,23 +7,37 @@ convenient path in a test is also the correct one — a test that reached for
 `time.time()` or a live Redis would work locally and fail in the hook.
 """
 
+from collections.abc import Iterator
 from types import SimpleNamespace
 
 import fakeredis.aioredis
 import pytest
 from cryptography.fernet import Fernet
 
-from src.connectors.base import CapabilityModel
 from src.connectors.github import GitHubConnectorAdapter
 from src.connectors.jira import JiraConnectorAdapter
 from src.execution.assemble import ResultAssembler
+from src.execution.duckdb_pool import DuckDBPool
 from src.governance.cache import FreshnessCacheManager
 from src.governance.clock import FakeClock
 from src.governance.ratelimit import TokenBucketRateLimiter
 from src.governance.secrets import SecretsManagerClient
 from src.models.context import UserContext
-from src.sqlparse.catalog import Source, SourceCatalog
+from src.sqlparse.catalog import SourceCatalog
 from src.sqlparse.parser import SQLParser
+from tests.unit.catalog_fixture import (
+    GITHUB_CAPABILITIES,
+    JIRA_CAPABILITIES,
+    build_catalog,
+)
+
+#: Re-exported: `test_whitelist` imports `build_catalog` from this module.
+__all__ = ["GITHUB_CAPABILITIES", "JIRA_CAPABILITIES", "build_catalog"]
+
+#: One Fernet key for every fixture tenant. Generated per run rather than
+#: committed: nothing here asserts a specific key, only that the right tenant's
+#: key is the one used.
+ACME_FERNET_KEY = Fernet.generate_key().decode()
 
 
 @pytest.fixture
@@ -53,73 +67,6 @@ async def fake_redis():
 # file I/O; `tests/integration/test_seed.py` is what asserts the YAML actually
 # round-trips into these shapes through Postgres.
 
-GITHUB_CAPABILITIES = {
-    "columns": [
-        "number", "title", "author", "repo", "state", "issue_key",
-        "created_at", "updated_at",
-    ],
-    "key_columns": {
-        "repo": {
-            "require": "required",
-            "ops": ["="],
-            "option": {"inject_into": "path", "field": "repo"},
-        },
-        "state": {
-            "require": "optional",
-            "ops": ["="],
-            "option": {"inject_into": "query", "field": "state"},
-        },
-        "author": {
-            "require": "optional",
-            "ops": ["="],
-            "option": {"inject_into": "query", "field": "author"},
-        },
-    },
-    "column_types": {"number": "integer"},
-    "sortable": ["created_at", "updated_at"],
-    "pagination": {
-        "strategy": "cursor",
-        "page_size": 100,
-        "token_option": {"inject_into": "query", "field": "cursor"},
-        "stop": "returned<page_size",
-    },
-}
-
-JIRA_CAPABILITIES = {
-    "columns": ["key", "status", "assignee", "reporter_email", "project", "updated"],
-    "key_columns": {
-        "status": {
-            "require": "optional",
-            "ops": ["="],
-            "option": {"inject_into": "query", "field": "status"},
-        },
-        "assignee": {
-            "require": "optional",
-            "ops": ["="],
-            "option": {"inject_into": "query", "field": "assignee"},
-        },
-        "project": {
-            "require": "optional",
-            "ops": ["="],
-            "option": {"inject_into": "query", "field": "project"},
-        },
-        "updated": {
-            "require": "optional",
-            "ops": ["=", ">", ">=", "<", "<="],
-            "option": {"inject_into": "query", "field": "updated"},
-        },
-    },
-    "sortable": ["updated"],
-    "pagination": {
-        "strategy": "offset",
-        "page_size": 100,
-        "token_option": {"inject_into": "query", "field": "startAt"},
-        "stop": "returned<page_size",
-    },
-}
-
-ACME_FERNET_KEY = Fernet.generate_key().decode()
-
 
 class FakeControlPlane:
     """The four control-plane reads a connector makes, without Postgres.
@@ -141,16 +88,32 @@ class FakeControlPlane:
         }
         self.grants = {
             "tenant_acme": [
-                {"connector_type": "github", "enabled": True, "status": "active",
-                 "secret_ref": "tenant_acme/github"},
-                {"connector_type": "jira", "enabled": True, "status": "active",
-                 "secret_ref": "tenant_acme/jira"},
+                {
+                    "connector_type": "github",
+                    "enabled": True,
+                    "status": "active",
+                    "secret_ref": "tenant_acme/github",
+                },
+                {
+                    "connector_type": "jira",
+                    "enabled": True,
+                    "status": "active",
+                    "secret_ref": "tenant_acme/jira",
+                },
             ],
             "tenant_load": [
-                {"connector_type": "github", "enabled": True, "status": "active",
-                 "secret_ref": "tenant_load/github"},
-                {"connector_type": "jira", "enabled": True, "status": "active",
-                 "secret_ref": "tenant_load/jira"},
+                {
+                    "connector_type": "github",
+                    "enabled": True,
+                    "status": "active",
+                    "secret_ref": "tenant_load/github",
+                },
+                {
+                    "connector_type": "jira",
+                    "enabled": True,
+                    "status": "active",
+                    "secret_ref": "tenant_load/jira",
+                },
             ],
         }
         self.secrets = {
@@ -160,8 +123,10 @@ class FakeControlPlane:
                 "ciphertext": SecretsManagerClient.encrypt(ACME_FERNET_KEY, f"token-for-{ref}"),
             }
             for ref in (
-                "tenant_acme/github", "tenant_acme/jira",
-                "tenant_load/github", "tenant_load/jira",
+                "tenant_acme/github",
+                "tenant_acme/jira",
+                "tenant_load/github",
+                "tenant_load/jira",
             )
         }
         self.tenants = {
@@ -327,23 +292,8 @@ LIMIT 50
 #: Both connectors granted, which is what `tenant_acme` is seeded with.
 GRANTED = frozenset({"github", "jira"})
 
-
-def build_catalog() -> SourceCatalog:
-    """The two sources, built from the same capability dicts the adapters use."""
-    return SourceCatalog(
-        {
-            ("github", "pull_requests"): Source(
-                connector_type="github",
-                resource="pull_requests",
-                capabilities=CapabilityModel.from_dict(GITHUB_CAPABILITIES),
-            ),
-            ("jira", "issues"): Source(
-                connector_type="jira",
-                resource="issues",
-                capabilities=CapabilityModel.from_dict(JIRA_CAPABILITIES),
-            ),
-        }
-    )
+#: Re-exported: `test_whitelist` imports `build_catalog` from this module.
+__all__ = ["GITHUB_CAPABILITIES", "JIRA_CAPABILITIES", "build_catalog"]
 
 
 @pytest.fixture
@@ -396,3 +346,18 @@ def assembler(limiter, control_plane, fake_clock) -> ResultAssembler:
     make every fixture look hours stale and fire spurious STALE_DATA warnings.
     """
     return ResultAssembler(limiter, control_plane, fake_clock)
+
+
+@pytest.fixture
+def duckdb_pool() -> Iterator[DuckDBPool]:
+    """A real pool, closed after the test.
+
+    Real rather than faked: the pool IS the isolation boundary, so a stub that
+    always handed back the same cursor would make every cross-tenant assertion
+    in this suite pass for the wrong reason.
+    """
+    pool = DuckDBPool()
+    try:
+        yield pool
+    finally:
+        pool.close()

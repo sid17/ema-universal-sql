@@ -29,6 +29,7 @@ from typing import Any
 
 from src.entitlement.engine import EntitlementEngine
 from src.execution.assemble import DEFAULT_PAGE_SIZE, ResultAssembler, decode_cursor
+from src.execution.duckdb_pool import DuckDBPool
 from src.execution.federation import FederationEngine
 from src.governance.audit import AuditLogger, AuditRecord, normalize_sql
 from src.models.context import UserContext
@@ -72,6 +73,7 @@ class QueryPipelineRunner:
         assembler: ResultAssembler,
         audit: AuditLogger,
         deadline_ms: int,
+        duckdb_pool: DuckDBPool,
     ) -> None:
         self._registry = registry
         #: Public so the TEST_MODE-only `fail-next` route can arm a failure.
@@ -82,10 +84,11 @@ class QueryPipelineRunner:
         self._assembler = assembler
         self._audit = audit
         self._deadline_ms = deadline_ms
+        #: Process-lived, so the 6.5ms cost of creating a DuckDB instance is
+        #: paid once per tenant rather than once per request.
+        self._duckdb_pool = duckdb_pool
 
-    async def run(
-        self, request: QueryRequest, user: UserContext, trace_id: str
-    ) -> QueryEnvelope:
+    async def run(self, request: QueryRequest, user: UserContext, trace_id: str) -> QueryEnvelope:
         stats: dict[str, Any] = {}
         started = time.perf_counter()
 
@@ -106,7 +109,9 @@ class QueryPipelineRunner:
 
         with stage("federation", stats):
             result = await FederationEngine(
-                self._registry.adapters(), deadline_ms=self._deadline_ms
+                self._registry.adapters(),
+                deadline_ms=self._deadline_ms,
+                pool=self._duckdb_pool,
             ).execute(
                 plan,
                 tenant_id=user.tenant_id,

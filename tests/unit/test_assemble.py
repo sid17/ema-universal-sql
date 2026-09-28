@@ -6,7 +6,6 @@ prose. So must the rails HLD §9 fixes — freshness is the STALEST contributor,
 and `next_cursor` is null whenever `partial`.
 """
 
-
 import pytest
 
 from src.connectors.errors import FailureMode
@@ -18,6 +17,7 @@ from src.execution.assemble import (
     Page,
     decode_cursor,
 )
+from src.execution.duckdb_pool import DuckDBPool
 from src.execution.federation import FederationEngine
 from src.models.errors import InvalidQueryError
 from src.planner.planner import QueryPlanner
@@ -46,12 +46,19 @@ async def envelope(
 ):
     plan = make_plan(parser, sql=sql, user_id=user_id, policies=policies)
     page = page or Page(offset=0, size=plan.limit or DEFAULT_PAGE_SIZE)
-    result = await FederationEngine(adapters, deadline_ms=deadline_ms).execute(
-        plan, "tenant_acme", max_staleness_ms, row_limit=page.probe_limit
-    )
-    return await assembler.assemble(
-        plan, result, "tenant_acme", "trace-abc", max_staleness_ms, page
-    )
+    # A helper-local pool, closed straight after: this helper is imported by
+    # `test_assemble_provenance.py` too, and a fixture threaded through both
+    # would add a parameter to every caller for no assertion's benefit.
+    pool = DuckDBPool()
+    try:
+        result = await FederationEngine(adapters, deadline_ms=deadline_ms, pool=pool).execute(
+            plan, "tenant_acme", max_staleness_ms, row_limit=page.probe_limit
+        )
+        return await assembler.assemble(
+            plan, result, "tenant_acme", "trace-abc", max_staleness_ms, page
+        )
+    finally:
+        pool.close()
 
 
 # --- columns ----------------------------------------------------------------
@@ -78,7 +85,10 @@ async def test_a_masked_column_is_flagged(parser, adapters, assembler):
 async def test_unmasked_columns_are_not_flagged(parser, adapters, assembler):
     env = await envelope(parser, adapters, assembler, sql=CLS_DEMO_SQL)
     assert [c.name for c in env.columns if not c.masked] == [
-        "title", "author", "key", "status",
+        "title",
+        "author",
+        "key",
+        "status",
     ]
 
 
@@ -139,9 +149,7 @@ async def test_a_full_page_returns_a_cursor_and_the_next_window_does_not_overlap
     assert len(first.rows) == 2
     assert first.next_cursor is not None
 
-    second = await envelope(
-        parser, adapters, assembler, page=decode_cursor(first.next_cursor, 2)
-    )
+    second = await envelope(parser, adapters, assembler, page=decode_cursor(first.next_cursor, 2))
     assert len(second.rows) == 1
     assert second.next_cursor is None
 
@@ -149,9 +157,7 @@ async def test_a_full_page_returns_a_cursor_and_the_next_window_does_not_overlap
     assert len(set(keys)) == 3, "pages overlapped or skipped a row"
 
 
-async def test_the_tiebreaker_makes_the_page_boundary_stable(
-    parser, adapters, assembler
-):
+async def test_the_tiebreaker_makes_the_page_boundary_stable(parser, adapters, assembler):
     """Two of alice's three issues share an `updated` value (ADR-035), and the
     page boundary falls between them. Without `key ASC` the order across the two
     separate queries would not be guaranteed to agree."""

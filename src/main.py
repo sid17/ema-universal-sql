@@ -27,6 +27,7 @@ from src.config import get_settings
 from src.control_plane.db import create_pool, run_migrations
 from src.control_plane.repository import ControlPlaneRepository
 from src.execution.assemble import ResultAssembler
+from src.execution.duckdb_pool import DuckDBPool
 from src.gateway.handlers import install_error_handlers
 from src.gateway.routes import router
 from src.governance.audit import AuditLogger
@@ -62,7 +63,7 @@ def _warn_on_default_secret(settings) -> None:
         )
 
 
-def _build_runner(settings, pool, redis_pipeline, repository) -> QueryPipelineRunner:
+def _build_runner(settings, pool, redis_pipeline, repository, duckdb_pool) -> QueryPipelineRunner:
     """Assemble the pipeline once, here, and nowhere else.
 
     Every collaborator below is shared for the life of the process: one cache,
@@ -82,6 +83,7 @@ def _build_runner(settings, pool, redis_pipeline, repository) -> QueryPipelineRu
         assembler=ResultAssembler(limiter, repository),
         audit=AuditLogger(pool),
         deadline_ms=settings.REQUEST_TIMEOUT_MS,
+        duckdb_pool=duckdb_pool,
     )
 
 
@@ -112,16 +114,26 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     repository = ControlPlaneRepository(pool)
 
+    # Named `duckdb_pool` because `pool` in this module is the Postgres pool.
+    # Process-lived and bounded; see src/execution/duckdb_pool.py for why it is
+    # per tenant rather than one shared instance.
+    duckdb_pool = DuckDBPool(
+        max_instances=settings.DUCKDB_MAX_INSTANCES,
+        memory_limit=settings.DUCKDB_MEMORY_LIMIT,
+    )
+
     app.state.pool = pool
     app.state.redis = redis_client
     app.state.repository = repository
-    app.state.runner = _build_runner(settings, pool, redis_pipeline, repository)
+    app.state.duckdb_pool = duckdb_pool
+    app.state.runner = _build_runner(settings, pool, redis_pipeline, repository, duckdb_pool)
 
     try:
         yield
     finally:
         await redis_pipeline.aclose()
         redis_client.close()
+        duckdb_pool.close()
         pool.close()
 
 

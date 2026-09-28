@@ -37,6 +37,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from src.connectors.base import AdapterResponse, BaseConnectorAdapter, FetchRequest
+from src.execution.duckdb_pool import DuckDBPool
 from src.execution.join import join_sources
 from src.models.errors import ApiError, ErrorCode
 from src.observability.metrics import observe_connector_fetch
@@ -141,9 +142,11 @@ class FederationEngine:
         self,
         adapters: Mapping[str, BaseConnectorAdapter],
         deadline_ms: int,
+        pool: DuckDBPool,
     ) -> None:
         self._adapters = adapters
         self._deadline_ms = deadline_ms
+        self._pool = pool
 
     async def execute(
         self,
@@ -175,9 +178,12 @@ class FederationEngine:
         # the join. It also copies the caller's contextvars, so the `duckdb_join`
         # span is still parented to `federation` and the waterfall is unchanged.
         #
-        # Safe by construction: each call opens its OWN `:memory:` connection and
-        # closes it in a `finally`, so no DuckDB state is shared across threads.
-        rows, columns = await asyncio.to_thread(join_sources, plan, fetches, row_limit)
+        # Safe by construction: each call takes its OWN cursor from the tenant's
+        # pooled instance and closes it in a `finally`. Registrations are
+        # cursor-local, so nothing is shared across threads (see DuckDBPool).
+        rows, columns = await asyncio.to_thread(
+            join_sources, plan, fetches, row_limit, self._pool, tenant_id
+        )
         return FederationResult(rows=rows, columns=columns, fetches=fetches)
 
     # -- the parallel fetch, with a real deadline --------------------------
@@ -332,9 +338,7 @@ class FederationEngine:
         )
 
     @staticmethod
-    def _failed(
-        alias: str, source_plan: SourcePlan, started: float, exc: ApiError
-    ) -> SourceFetch:
+    def _failed(alias: str, source_plan: SourcePlan, started: float, exc: ApiError) -> SourceFetch:
         return SourceFetch(
             alias=alias,
             connector_type=source_plan.connector_type,

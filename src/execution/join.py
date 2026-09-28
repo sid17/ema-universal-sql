@@ -17,10 +17,10 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING, Any
 
-import duckdb
 from sqlglot import exp
 
 from src.execution.arrow import build_table, envelope_type
+from src.execution.duckdb_pool import DuckDBPool
 from src.observability.tracing import ELAPSED_MS_ATTRIBUTE, get_tracer
 from src.planner.planner import QueryPlan
 
@@ -36,9 +36,16 @@ JOIN_SPAN = "duckdb_join"
 def join_sources(
     plan: QueryPlan,
     fetches: tuple[SourceFetch, ...],
-    row_limit: int | None = None,
+    row_limit: int | None,
+    pool: DuckDBPool,
+    tenant_id: str,
 ) -> tuple[list[list[Any]], tuple[tuple[str, str], ...]]:
     """Register every source as an Arrow table and run the entitled SQL.
+
+    Executes on a **cursor from this tenant's pooled instance**. The pool is a
+    required argument rather than an optional one with a ``connect()`` fallback:
+    a default that quietly reverts to a fresh instance would turn a wiring bug
+    into a 6.5ms-per-request regression that no test could see.
 
     Wrapped in the ``duckdb_join`` span so a reader of the waterfall can tell
     "the sources were slow" from "the join was slow" — without it both live
@@ -48,7 +55,7 @@ def join_sources(
     with get_tracer().start_as_current_span(JOIN_SPAN) as span:
         started = time.perf_counter()
         try:
-            return _execute_join(plan, fetches, row_limit)
+            return _execute_join(plan, fetches, row_limit, pool, tenant_id)
         finally:
             span.set_attribute(ELAPSED_MS_ATTRIBUTE, (time.perf_counter() - started) * 1000.0)
 
@@ -57,17 +64,23 @@ def _execute_join(
     plan: QueryPlan,
     fetches: tuple[SourceFetch, ...],
     row_limit: int | None,
+    pool: DuckDBPool,
+    tenant_id: str,
 ) -> tuple[list[list[Any]], tuple[tuple[str, str], ...]]:
     """Register, execute, read back.
 
     Separate from :func:`join_sources` only so the span wraps a call rather
     than a forty-line body — the timing and the work stay legible apart.
     """
-    connection = duckdb.connect(":memory:")
+    # A CURSOR, not a connection. `register()` is cursor-local — verified,
+    # not assumed: a view registered here is invisible to every other in-flight
+    # request on the same instance, and it disappears when this cursor closes,
+    # so no request can read the previous one's leftovers.
+    cursor = pool.cursor(tenant_id)
     try:
         for fetch in fetches:
             source = fetch.plan.source
-            connection.register(
+            cursor.register(
                 source.registered_name,
                 build_table(
                     fetch.rows,
@@ -82,17 +95,15 @@ def _execute_join(
         if row_limit is not None:
             tree.set("limit", exp.Limit(expression=exp.Literal.number(row_limit)))
         sql = tree.sql(dialect="duckdb")
-        cursor = connection.execute(sql)
-        columns = tuple(
-            (name, envelope_type(kind)) for name, kind, *_ in cursor.description or ()
-        )
+        cursor.execute(sql)
+        columns = tuple((name, envelope_type(kind)) for name, kind, *_ in cursor.description or ())
         # `to_arrow_table()`, not `.arrow()`: on duckdb 1.5.x the latter
         # returns a RecordBatchReader and `fetch_arrow_table()` is deprecated.
         table = cursor.to_arrow_table()
         rows = [[record[name] for name, _ in columns] for record in table.to_pylist()]
         return rows, columns
     finally:
-        connection.close()
+        cursor.close()
 
 
 def rebind_to_registered(tree: exp.Select) -> exp.Select:

@@ -70,7 +70,7 @@ def pool() -> FakePool:
 
 
 @pytest.fixture
-def runner(cache, limiter, secrets, control_plane, fake_clock, pool):
+def runner(cache, limiter, secrets, control_plane, fake_clock, pool, duckdb_pool):
     def _build(policies=(RLS_ASSIGNEE, CLS_REPORTER), deadline_ms=5000):
         repository = FakeRepository(control_plane, policies)
         registry = ConnectorRegistry(repository, cache, limiter, secrets)
@@ -80,6 +80,7 @@ def runner(cache, limiter, secrets, control_plane, fake_clock, pool):
             assembler=ResultAssembler(limiter, repository, fake_clock),
             audit=AuditLogger(pool),
             deadline_ms=deadline_ms,
+            duckdb_pool=duckdb_pool,
         )
 
     return _build
@@ -96,9 +97,7 @@ def spans():
 
 
 async def run(runner_factory, sql=CANONICAL_SQL, user_id="alice", **kwargs):
-    return await runner_factory(**kwargs).run(
-        QueryRequest(sql=sql), persona(user_id), "trace-xyz"
-    )
+    return await runner_factory(**kwargs).run(QueryRequest(sql=sql), persona(user_id), "trace-xyz")
 
 
 # --- the end-to-end flow ----------------------------------------------------
