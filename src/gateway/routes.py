@@ -224,6 +224,20 @@ async def test_fail_next(body: FailNextRequest, request: Request) -> dict[str, s
 def test_reset(request: Request, repository: Repository) -> dict[str, str]:
     """Flush Redis and drop cached control-plane reads. Test-only.
 
+    **Partial by construction, and named rather than hidden.** ``flushdb`` is
+    global — every worker sees it, because Redis is shared. ``invalidate()`` is
+    not: the control-plane TTL cache lives in this process, so only the worker
+    that happened to serve *this* request drops its entries. The other seven
+    keep theirs for up to ``CONTROL_PLANE_TTL_MS``.
+
+    That is the same shape as two defects already fixed in this repo — the
+    forced-failure hook and the ``rate_limit_remaining`` gauge — per-worker
+    state reached through an endpoint that looks global. It has not bitten
+    anything: the reads it caches (capabilities, grants, policies, budgets) only
+    change on a re-seed, and the tests that re-seed read Postgres directly
+    rather than through the app. A test that re-seeds and then queries through
+    ``POST /v1/query`` WOULD see stale data from seven workers out of eight.
+
     Guarded by ``TEST_MODE``: returns 404 otherwise, so the route does not exist
     at all in a normal run rather than existing and refusing. Phase 3's Playwright
     ``beforeEach`` and Phase 4's k6 both need a deterministic starting state —

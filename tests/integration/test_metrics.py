@@ -65,7 +65,17 @@ def test_the_rate_limit_gauge_has_a_real_sample_after_a_query(envelope, scrape):
 def test_the_gauge_matches_what_the_envelope_told_the_caller(envelope, scrape):
     """ADR-043: one read feeds both, so they cannot drift. If this ever fails,
     the metric and the API are reporting different budgets for the same bucket —
-    which is worse than having no metric, because both look authoritative."""
+    which is worse than having no metric, because both look authoritative.
+
+    **What the equality rests on.** With eight workers, `/metrics` merges eight
+    separate readings of the same bucket, and the merge rule is the gauge's
+    `multiprocess_mode`. This holds because that mode is `livemostrecent` and
+    the query above is the most recent write. Under `livemin` — what it was
+    until Phase 6b — an older, lower reading left behind by another worker's
+    drain won instead, and this test failed only when something had primed a
+    second worker first: reliably after `make artifacts`, never on a quiet
+    stack. See `tests/unit/test_metrics_multiprocess.py`.
+    """
     env = envelope()
     found = samples(scrape(), "rate_limit_remaining")
 

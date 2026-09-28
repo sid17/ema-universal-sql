@@ -33,7 +33,6 @@ a code path nothing else exercises. The phase file is corrected instead.
 from __future__ import annotations
 
 import os
-from pathlib import Path
 from typing import TypeVar
 
 from prometheus_client import (
@@ -97,18 +96,33 @@ def _get_or_create(
 #: Per-connector, per-tenant budget left. Fed from `ResultAssembler._budgets`,
 #: which is the one place already asking the bucket for this number (ADR-043).
 #:
-#: `multiprocess_mode="livemin"`: with eight workers each holding its own view
-#: of a tenant's bucket, the honest answer to "how much budget is left" is the
-#: smallest live reading, not a sum (which would multiply the budget by eight)
-#: and not the newest (which would flap between workers). `live*` modes also
-#: drop the readings of workers that have exited, so a restarted worker does not
-#: leave a stale budget behind forever.
+#: `multiprocess_mode="livemostrecent"`, and the mode is a **correctness**
+#: decision rather than a formatting one.
+#:
+#: This gauge does not measure a per-worker quantity that wants aggregating. It
+#: measures ONE shared number — a token bucket in Redis — sampled by whichever
+#: worker happened to serve a query. Eight workers are eight observers of the
+#: same thing, so the only reading that is ever current is the newest.
+#:
+#: It was `livemin` until this was measured. The argument for it was that the
+#: smallest live reading is the conservative answer; that holds for a quantity
+#: each worker owns a *share* of, and this is not one. What it did instead was
+#: pin the gauge to a stale low sample — a worker that served a query during an
+#: earlier drain kept voting `0` long after the bucket refilled, so an alert on
+#: "budget exhausted" fires for a tenant who is fine. It also made the gauge and
+#: `QueryEnvelope.rate_limit_status` report different numbers for the same
+#: bucket while both looked authoritative, which is worse than having no metric
+#: at all (ADR-043 exists to prevent exactly that). See
+#: `tests/unit/test_metrics_multiprocess.py`.
+#:
+#: `live*` is still wanted: it drops the readings of workers that have exited,
+#: so a restarted worker leaves no stale budget behind.
 rate_limit_remaining = _get_or_create(
     Gauge,
     RATE_LIMIT_REMAINING_NAME,
     "Requests left in the tenant's token bucket for a connector.",
     RATE_LIMIT_REMAINING_LABELS,
-    multiprocess_mode="livemin",
+    multiprocess_mode="livemostrecent",
 )
 
 #: End-to-end query latency — the histogram P50/P95 are read off.
@@ -195,19 +209,3 @@ def render_metrics() -> tuple[bytes, str]:
     registry = CollectorRegistry()
     multiprocess.MultiProcessCollector(registry)
     return generate_latest(registry), CONTENT_TYPE_LATEST
-
-
-def reset_multiprocess_dir() -> None:
-    """Empty the sample directory. Called once at startup, before any worker.
-
-    `prometheus_client` never removes these files, so without this a scrape
-    after a restart sums the previous run's counters into this one's — the
-    metrics equivalent of a stale cache, and just as hard to notice.
-    """
-    directory = os.environ.get(MULTIPROC_DIR_ENV)
-    if not directory:
-        return
-    path = Path(directory)
-    path.mkdir(parents=True, exist_ok=True)
-    for stale in path.glob("*.db"):
-        stale.unlink()
