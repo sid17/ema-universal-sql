@@ -37,9 +37,9 @@ make seed                     # loads config/*.yaml into the control plane
 seed complete:
   tenants                     4 rows     <- created by migration, not by the seeder
   connectors                  2 rows     <- config/connectors/*.yaml
-  tenant_connector            6 rows     <- config/grants.yaml
-  secrets                     6 rows     <- Fernet ciphertext, one key per tenant
-  policies                    2 rows     <- config/policies.yaml (1 RLS + 1 CLS)
+  tenant_connector            5 rows     <- config/grants.yaml
+  secrets                     5 rows     <- Fernet ciphertext, one key per tenant
+  policies                    3 rows     <- config/policies.yaml (1 RLS + 1 CLS + 1 deny)
   rate_limit_policies         6 rows     <- config/rate_limits.yaml
 ```
 
@@ -56,8 +56,18 @@ T=$(curl -s -X POST localhost:8000/v1/auth/mock-token \
 
 curl -s -X POST localhost:8000/v1/query \
      -H "Authorization: Bearer $T" -H 'content-type: application/json' \
-     -d '{"sql":"SELECT 1","max_staleness_ms":60000}' | jq
+     -d '{"sql":"SELECT pr.title, pr.author, issue.key, issue.status
+                 FROM   github.pull_requests pr
+                 JOIN   jira.issues issue ON pr.issue_key = issue.key
+                 WHERE  pr.repo = '"'"'ema/core'"'"' AND pr.state = '"'"'open'"'"'
+                        AND issue.status = '"'"'In Progress'"'"'
+                 ORDER BY issue.updated DESC
+                 LIMIT 50",
+          "max_staleness_ms":0}' | jq
 ```
+
+Then swap `alice` for `bob` and run it again: **3 rows becomes 1**, from byte-identical SQL. Or just run
+`make demo`, which does all of that and more and tees the output to `docs/demo-output.txt`.
 
 ### Make targets
 
@@ -67,7 +77,8 @@ curl -s -X POST localhost:8000/v1/query \
 | `make seed` | load `config/*.yaml` into the control plane; re-runnable | yes |
 | `make test` | the unit suite — fast, hermetic | **no** |
 | `make test-integration` | the integration suite | yes — run `make up` first |
-| `make demo` | print the envelope for alice / bob / forced-timeout | yes |
+| `make demo` | the scripted walkthrough — alice, bob, the staleness knob, a forced timeout; tees to `docs/demo-output.txt` | yes |
+| `make test-mode` | recreate the app with `TEST_MODE=1`, enabling the `/v1/test/*` hooks | yes |
 | `make e2e` | Playwright specs against the console | yes |
 | `make load` | k6, ~500 QPS for 60s | yes |
 | `make fmt` | `ruff format` | no |
@@ -123,14 +134,15 @@ the production target for `secret_ref`; see *Production mapping* below.
 
 ### Current status
 
-**Phase 1 of 5 is complete.** Phase 0 shipped the shell (containers, auth, the typed envelope, the
-control-plane reads, the observability seam); Phase 1 adds the two mock connectors behind one contract plus
-the three governance primitives — the token bucket with burst, the freshness cache, and per-tenant secret
-resolution — all seeded from YAML.
+**Phase 2 of 5 is complete, and `POST /v1/query` runs the canonical query end to end.** Phase 0 shipped the
+shell (containers, auth, the typed envelope, the control-plane reads, the observability seam); Phase 1 added
+the two mock connectors behind one contract plus the three governance primitives; Phase 2 built the pipeline
+that turns SQL into an entitled answer — parse, entitle, plan, federate, assemble.
 
-**`POST /v1/query` still returns a valid but empty envelope shell.** Nothing calls the connectors through SQL
-yet: parsing, entitlement compilation, planning and execution are Phase 2. Until then the adapters are
-exercised directly by the test suite, which is where the 3 → 1 → 0 persona numbers are asserted today.
+Still to come: **Phase 4** (k6 load profile, the trace waterfall artifact, the `/metrics` scrape, the rest of
+this README) and **Phase 3** (the UI console and Playwright specs). Both depend only on Phase 2. Phase 4 runs
+first because it holds four MUST-tier deliverables while the console is SHOULD-tier — and `make demo` already
+carries the demo, so a slip there cannot leave the submission without one.
 
 ### What is described in the design doc but deliberately not built
 
@@ -146,17 +158,105 @@ breaker would guard a function that cannot fail transiently. The forced-failure 
 
 ## What it proves — the five hard parts
 
-<!-- Filled in Phase 2, once `make demo` exists. Each hard part gets one command and what passing looks like. -->
+One command each. A claim with no command behind it does not count.
 
-*Pending Phase 2.*
+| # | Hard part | Command | Passing looks like |
+|---|---|---|---|
+| 1 | **Query-time RLS / CLS entitlement** | `make demo` (steps 1–3) | Row count goes **3 → 1** for the same SQL — it shrinks but stays non-zero. `reporter_email` comes back as an MD5 digest with `masked: true`; the raw address appears nowhere. The Jira adapter received `assignee=<persona>`, so the forbidden rows were **never fetched**. |
+| 2 | **Per-tenant fairness over rate limits** | re-run step 1 more than 7× with `max_staleness_ms=0` | `429 RATE_LIMIT_EXHAUSTED`, a `Retry-After` header, and a `suggested_action` naming the async path. `tenant_acme`'s GitHub budget is 5 + 2 burst, deliberately tiny so the demo is deterministic. Never a hang. |
+| 3 | **Credential isolation** | `make test` (`tests/unit/test_secrets.py`) | Each tenant's `secret_ref` decrypts only under its own Fernet key. `test_crypto_shred` destroys one key and shows the ciphertext survive as permanently unreadable, with every other tenant untouched. |
+| 4 | **Entitlement-aware caching / freshness** | `make demo` (step 3) | `sources[].served` flips `live` → `cache`, `stats.connector_ms` empties, and `rate_limit_status` is **not decremented** — a cache hit spends no token. `freshness_ms` reports the **stalest** contributor. |
+| 5 | **Connector reliability + honest degradation** | `make demo` (step 4) | `partial: true`, `join_status: "incomplete"`, a `SOURCE_TIMEOUT` warning naming `jira`, and `next_cursor: null`. The surviving GitHub rows are **never** passed off as the joined answer. |
+
+Plus the correctness point that is graded and easy to lose — **empty ≠ partial ≠ error**:
+`tests/integration/test_trichotomy.py` asserts all three shapes side by side. carol returns
+`rows: [], partial: false, join_status: "complete"` (a *correct* answer); a timed-out source returns
+`partial: true, join_status: "incomplete"` (a *degraded* one); malformed SQL returns `400 INVALID_QUERY`
+with no envelope at all.
+
+`make demo` writes everything it printed to [`docs/demo-output.txt`](docs/demo-output.txt), so the artifact
+survives the terminal scrollback.
+
+### The one assertion that matters most
+
+Every count-based test in this repository would also pass against an implementation that fetched everything
+and filtered it in Python — which is precisely the design the document argues against. So the load-bearing
+assertion is not a row count:
+
+```python
+# tests/unit/test_federation.py
+assert fetched["jira"] == 3      # alice
+assert fetched["jira"] == 1      # bob
+```
+
+The **fetch** shrinks with the persona (9 → 3 → 1 unfiltered → alice → bob), because the RLS predicate was
+compiled into the plan before the pushdown split. GitHub stays at 14 for every persona, correctly — the rule
+is on a Jira column. A post-filtering build reads 9 every time.
 
 ## Trade-offs and the join strategy
 
-<!-- Filled in Phase 2. Covers federated vs materialised (take-home line 69), why DuckDB `:memory:` stands in
-     for both of design-doc §4.4's join paths, and why entitlement is compiled into the plan rather than
-     applied post-fetch. -->
+### Federated vs materialized
 
-*Pending Phase 2.*
+The brief asks for the join strategy to be documented (line 69). This prototype is **federated**: every query
+fetches from the sources at request time and joins in-process. Nothing is pre-copied.
+
+|  | Federated (built) | Materialized (designed, not built) |
+|---|---|---|
+| Freshness | bounded by `max_staleness_ms`, caller-controlled per request | bounded by sync lag, operator-controlled |
+| Entitlement | evaluated per request against live policy | must be re-evaluated on a copy, or the copy becomes a second place data can leak |
+| Source load | one call per query per source, cut by the cache | amortized — the big win at high QPS |
+| Joins | limited by what fits in memory (128 MB spill threshold) | arbitrary, indexed |
+| Failure mode | a slow source degrades the answer (`partial`) | a stale copy silently answers with old data |
+
+The decisive argument for federating **this** workload is the third row of that table, not the first. A
+materialized copy of another system's data has to carry that system's entitlement rules with it, forever, and
+stay correct as they change. Every copy is a second place a permission bug can leak from. Federating keeps
+exactly one evaluation point — the query plan — which is the same reason entitlement is compiled in rather
+than applied after the fetch.
+
+Where materialization wins is scale, and the design document covers it as the path forward (§4.4): hot,
+slow-changing, heavily-joined sources get materialized behind the same interface, and the planner chooses.
+The prototype does not build that because a second execution path with no second correctness proof is worse
+than one honest one.
+
+### Why the entitlement goes into the plan
+
+The alternative every object-level ACL library offers — fetch the rows, then check each one — is banned
+outright here. It is not a performance argument. If forbidden rows cross the source boundary at all, then the
+source's own audit log records a read that should never have happened, the rows sit in this process's memory,
+and every downstream bug becomes a disclosure. Compiling `assignee = 'alice'` into the WHERE clause before
+the pushdown split means Jira is *asked* a narrower question. The research note on this is explicit: we took
+`fastapi-permissions`' dependency-injection shape and rejected its core flow.
+
+### Pushdown is an optimization, never correctness
+
+Two rules make that literally true rather than aspirational:
+
+1. **The engine re-applies every predicate.** The SQL executed in DuckDB is the whole entitled tree, including
+   the predicates a source already applied. A pushed predicate is simply applied twice, which is free. There
+   is no "residual predicate list" to drift out of sync with what each connector actually managed to do.
+2. **The fetch is `projection ∪ WHERE ∪ ORDER BY ∪ join keys`.** Otherwise that authoritative re-filter would
+   evaluate a predicate against a column that was never fetched and drop rows the caller was entitled to.
+
+A connector that supports no filters at all therefore returns correct results — just slowly. That is the
+property that makes adding a real connector a bounded piece of work.
+
+### Other trade-offs worth naming
+
+- **DuckDB `:memory:` per request.** No state to clean up and no cross-request contamination, at the cost of
+  re-registering the Arrow tables each time. At this row count that cost is unmeasurable; at scale it is the
+  first thing to revisit.
+- **Arrow schemas come from the capability model, never inferred from rows.** Inference looks tidier until an
+  empty result infers zero columns and DuckDB refuses to register the table — which is every zero-row path:
+  a denied resource, an RLS match of nothing, a timed-out source in a partial answer.
+- **The audit log stores normalized SQL** (literals replaced with `?`). Storing the raw text would write
+  `WHERE reporter_email = 'dana@acme.com'` into the compliance table in plaintext — the exact value the CLS
+  rule exists to withhold. The logging layer must not defeat the masking layer.
+- **An audit write that fails is logged, not raised.** The query already succeeded and its rows are already
+  correct; failing the response would turn a logging outage into a customer-facing one. A compliance posture
+  requiring the two to be transactional needs a durable queue, not a synchronous INSERT.
+- **`SELECT *` is rejected.** It defeats projection pushdown — the fetch set becomes every column the source
+  has. Naming columns is the price of a federated engine that only moves what you asked for.
 
 ## Production mapping — what is described, not built
 
