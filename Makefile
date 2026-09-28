@@ -10,7 +10,7 @@ BASE_URL ?= http://localhost:8000
 HEALTH_URL ?= $(BASE_URL)/healthz
 HEALTH_TIMEOUT ?= 90
 
-.PHONY: up down seed test test-integration test-mode e2e load load-seed load-mt demo trace scrape artifacts fmt
+.PHONY: up down seed test test-integration test-mode e2e load load-seed load-mt demo trace scrape connectors artifacts fmt
 
 ## up: build and start the stack, then wait until /healthz actually answers.
 # Polled, not slept: the submission gate times cold-to-serving, so the wait has
@@ -149,6 +149,24 @@ load-mt:
 	docker compose up -d --wait app
 	@echo "wrote docs/artifacts/load/k6-multitenant.txt"
 
+## connectors: show what goes in and out of each connector.
+# Runs INSIDE the app container for the same reason `make seed` does: postgres
+# and redis publish no host ports, and the point of this tool is that it uses
+# the REAL control plane, the REAL token bucket and the REAL freshness cache.
+# Wiring it to fakes would only prove the fakes agree with each other.
+#
+# Writes docs/artifacts/connectors/connector-walkthrough.txt. It queries
+# tenant_load and drains tenant_globex, never tenant_acme — `make demo` needs
+# acme's 5+2 GitHub budget intact for its 429 to be deterministic.
+#
+# Ad-hoc, for poking at it directly:
+#   docker compose exec app python -m src.connectorlab fetch github.pull_requests \
+#     --where repo=ema/core --where state=open --limit 5
+connectors:
+	@mkdir -p docs/artifacts/connectors
+	docker compose exec -T app python -m src.connectorlab --out - > docs/artifacts/connectors/connector-walkthrough.txt
+	@echo "wrote docs/artifacts/connectors/connector-walkthrough.txt ($$(wc -l < docs/artifacts/connectors/connector-walkthrough.txt) lines)"
+
 ## scrape: capture /metrics as a submission artifact.
 # Run it AFTER `make demo` or `make load`, or the histograms are empty and the
 # rate_limit_remaining gauge has no samples — the gauge is fed by a query.
@@ -160,7 +178,7 @@ scrape:
 ## artifacts: regenerate every reproducible submission artifact, in order.
 # demo first (it exercises the stack), then trace, then the scrape — which must
 # come last so it captures metrics the other two produced.
-artifacts: demo trace scrape
+artifacts: demo trace connectors scrape
 	@find docs/artifacts -type f | sort
 
 ## demo: the scripted walkthrough, teed to docs/artifacts/demo/demo-output.txt.
