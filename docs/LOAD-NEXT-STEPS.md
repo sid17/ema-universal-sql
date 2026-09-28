@@ -13,6 +13,8 @@
 Committed and green: **617 unit + 100 integration tests, ruff clean, working tree clean.**
 
 ```
+12d81b5  docs: the load-test method, the results, and what is left
+42540ec  refactor(docs): group generated artifacts, and trace the warm path
 94b4592  feat(load): a realistic multi-tenant k6 profile at 500 QPS
 b0265a6  feat(connectors): per-tenant synthetic datasets, and the load tenants
 517dd5d  feat(observability): multiprocess /metrics, and 8 workers by default
