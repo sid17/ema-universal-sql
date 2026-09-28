@@ -12,6 +12,8 @@ connections rather than opening its own.
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 from psycopg_pool import ConnectionPool
@@ -54,6 +56,38 @@ def create_pool(
     return pool
 
 
+#: Advisory-lock key for the migration run. Any constant works; this one is
+#: `hash("universal_sql.migrations")` truncated, written as a literal so nothing
+#: can recompute it differently on another Python build.
+MIGRATION_LOCK_KEY = 7_242_119_045_113_622
+
+
+@contextmanager
+def _migration_lock(pool: ConnectionPool) -> Iterator[None]:
+    """Serialise migration runs across every process sharing this database.
+
+    `CMD ["uvicorn", "--workers", "8"]` means eight processes call
+    :func:`run_migrations` within milliseconds of each other on a cold start.
+    Postgres's ``CREATE TABLE IF NOT EXISTS`` is **not** race-safe: two
+    concurrent creates both pass the existence check and one fails with
+    ``UniqueViolation on pg_type_typname_nsp_index``. Seven of eight workers
+    then died with "Application startup failed", uvicorn respawned them, and the
+    retry succeeded — so the stack came up healthy while dumping seven
+    tracebacks into the log of every fresh clone.
+
+    A session-level advisory lock costs one round trip and makes the whole run
+    mutually exclusive. It is held on ONE connection for the duration, because
+    a session lock belongs to the session that took it; taking and releasing it
+    on pooled connections would unlock nothing.
+    """
+    with pool.connection() as conn:
+        conn.execute("SELECT pg_advisory_lock(%s)", (MIGRATION_LOCK_KEY,))
+        try:
+            yield
+        finally:
+            conn.execute("SELECT pg_advisory_unlock(%s)", (MIGRATION_LOCK_KEY,))
+
+
 def _applied_filenames(pool: ConnectionPool) -> set[str]:
     """Return the migrations already recorded, creating the ledger if absent."""
     with pool.connection() as conn:
@@ -93,16 +127,19 @@ def run_migrations(
     if not directory.is_dir():
         raise FileNotFoundError(f"migrations directory not found: {directory}")
 
-    applied = _applied_filenames(pool)
     newly_applied: list[str] = []
+    # The ledger read is INSIDE the lock too, not just the writes: it is the
+    # statement that creates `schema_migrations`, and it was the one that raced.
+    with _migration_lock(pool):
+        applied = _applied_filenames(pool)
 
-    for path in sorted(directory.glob("*.sql"), key=lambda p: p.name):
-        if path.name in applied:
-            logger.debug("migration %s already applied, skipping", path.name)
-            continue
-        _apply_one(pool, path)
-        logger.info("migration %s applied", path.name)
-        newly_applied.append(path.name)
+        for path in sorted(directory.glob("*.sql"), key=lambda p: p.name):
+            if path.name in applied:
+                logger.debug("migration %s already applied, skipping", path.name)
+                continue
+            _apply_one(pool, path)
+            logger.info("migration %s applied", path.name)
+            newly_applied.append(path.name)
 
     if not newly_applied:
         logger.info("schema already current (%d migration(s) on record)", len(applied))
