@@ -1,27 +1,24 @@
 """Load ``config/*.yaml`` into the control plane. The implementation of ``make seed``.
 
-**Why YAML and not a seed migration** (ADR-021). The brief asks that admins
-onboard connectors *"via console or config"* (line 29) and that the minimal
-policy config ship as YAML in the repo (line 154, design-doc §6.2/§8.2). Three
-further reasons this is a script rather than a `003_seed.sql`:
+**Why YAML and not a seed migration.** Admins onboard connectors via config,
+and the policy config ships as YAML in the repo. Three further reasons this is a
+script rather than a `003_seed.sql`:
 
 1. **Secrets must be encrypted with each tenant's own key at seed time.** Static
    SQL could only carry pre-computed ciphertext, which hides the very
    indirection ``test_secret_indirection`` exists to prove.
-2. **``make seed`` must be re-runnable.** Phase 0 built a ``schema_migrations``
-   ledger, so a migration runs exactly once; a reviewer reseeding after a demo
-   would silently get nothing.
-3. **Onboarding stays "one YAML file + one adapter class"** — the claim line 29
-   is graded on.
+2. **``make seed`` must be re-runnable.** The ``schema_migrations`` ledger runs
+   a migration exactly once; a reviewer reseeding after a demo would silently
+   get nothing.
+3. **Onboarding stays "one YAML file + one adapter class."**
 
-Migrations stay schema-only from here, with the one exception Phase 0 had to
-make for tenant rows (``002_seed_tenants.sql``, which documents why in its own
-header).
+Migrations stay schema-only, with one exception for tenant rows
+(``002_seed_tenants.sql``, which documents why in its own header).
 
 **This script never creates a tenant.** Tenants are ``002_seed_tenants.sql``'s,
 and a seeder that could create them would let the two disagree about residency,
 status or — worst — the Fernet key that every secret below is encrypted with.
-A referenced tenant that does not exist is a loud failure (LAW 4).
+A referenced tenant that does not exist is a loud failure.
 """
 
 import os
@@ -66,7 +63,7 @@ def require_tenant(tenant_id: str, tenant_keys: dict[str, str], where: str) -> s
 def generate_token(tenant_id: str, connector_type: str) -> str:
     """A fresh mock credential for one grant.
 
-    **Generated, never authored** (ADR-026). ``config/grants.yaml`` carries no
+    **Generated, never authored.** ``config/grants.yaml`` carries no
     credential at all, so no literal secret exists anywhere in the repository —
     which is the only version of this with nothing for a reviewer to mistake for
     a real one, and nothing for a scanner to flag.
@@ -108,7 +105,7 @@ def seed_grants(conn, tenant_keys: dict[str, str]) -> tuple[int, int]:
                 raise SeedError(
                     f"grant {secret_ref!r} declares a literal `token`. Credentials are "
                     f"generated at seed time and must not be authored into "
-                    f"config/grants.yaml — remove the field (ADR-026)."
+                    f"config/grants.yaml — remove the field."
                 )
 
             cur.execute(
@@ -154,10 +151,10 @@ def _revoke_grants_not_in_config(cur, grants: list[dict[str, Any]]) -> None:
     the connector stayed queryable and the config file described a state the
     database was not in.
 
-    That is a real gap rather than a tidiness point. Brief line 29 asks for
-    admin connector onboarding via config, and offboarding is the same
-    operation run backwards; a config-driven system where removal does nothing
-    is one where revoking access silently fails. It surfaced when
+    That is a real gap rather than a tidiness point. Connector onboarding is
+    config-driven, and offboarding is the same operation run backwards; a system
+    where removal does nothing is one where revoking access silently fails. It
+    surfaced when
     ``tenant_globex`` kept its Jira grant after the entry was removed, and
     ``CONNECTOR_NOT_ENABLED`` stayed unreachable.
 
@@ -242,7 +239,7 @@ def seed_policies(conn, tenant_keys: dict[str, str]) -> int:
 
 
 def seed_rate_limits(conn, tenant_keys: dict[str, str]) -> int:
-    """Token-bucket budgets. One row per (tenant, connector) — ADR-020."""
+    """Token-bucket budgets. One row per (tenant, connector)."""
     budgets = load_yaml(CONFIG_DIR / "rate_limits.yaml").get("rate_limits") or []
     if not budgets:
         raise SeedError("config/rate_limits.yaml declares no budgets")

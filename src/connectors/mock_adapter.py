@@ -19,7 +19,7 @@ resource name, and their capability model.
 5. **paginate.**
 6. **record** ``served`` / ``fetched_at`` / ``etag`` and write the cache.
 
-Cache before token, never token before cache (ADR-024). The bucket models the
+Cache before token, never token before cache. The bucket models the
 *downstream API's* budget, and a cache hit makes no downstream call — charging
 for one is not conservative, it is wrong. Spending a token on a hit would also
 break three things at once: the "``304`` refreshes ``fetched_at`` without
@@ -67,15 +67,12 @@ class MockConnectorAdapter(MockTransport, BaseConnectorAdapter):
     #: What a call to this source costs, in milliseconds, before
     #: ``MOCK_LATENCY_SCALE`` is applied. Overridden per adapter.
     #:
-    #: HLD line 39 lists "simulated pagination/latency/429" as what the mocks
-    #: provide. Pagination and the 429 were built in Phase 1; this was not, and
-    #: Phase 4 is where the omission has consequences: with both sources
-    #: answering in ~2ms the trace waterfall's honest reading is *"the
-    #: connectors are free and DuckDB is the cost"* — the inverse both of the
-    #: intended story and of how any real federated query behaves, where the
-    #: remote call dominates by two orders of magnitude (ADR-038).
+    #: Without it, both sources answer in ~2ms and the trace waterfall's honest
+    #: reading is *"the connectors are free and DuckDB is the cost"* — the
+    #: inverse of how any real federated query behaves, where the remote call
+    #: dominates by two orders of magnitude.
     #:
-    #: Fixed rather than jittered on purpose. Phase 1 chose deterministic
+    #: Fixed rather than jittered on purpose. The datasets are deterministic
     #: datasets so no test can flake on timing; a random sleep would reintroduce
     #: exactly that through the back door.
     simulated_latency_ms: float = 0.0
@@ -189,7 +186,7 @@ class MockConnectorAdapter(MockTransport, BaseConnectorAdapter):
         # this dataset is a module-level constant, so the candidate ETag always
         # matches the stored one, every conditional request would succeed, and
         # once an entry existed NO value of max_staleness_ms could ever produce
-        # `served="live"` again. That breaks DoD §2 hard part 4, whose whole
+        # `served="live"` again. That breaks the freshness guarantee, whose whole
         # demonstration is the knob flipping `served` between live and cache.
         if lookup.status is CacheStatus.STALE and request.max_staleness_ms > 0:
             # A conditional request: `If-None-Match`, answered `304` with no
@@ -221,10 +218,10 @@ class MockConnectorAdapter(MockTransport, BaseConnectorAdapter):
 
         # --- 3b. the round trip a real source would cost ------------------
         #
-        # Placed HERE, and the placement is the whole decision (ADR-038). Every
+        # Placed HERE, and the placement is the whole decision. Every
         # return above this line is a cache hit, and a cache hit must stay
         # ~0.4ms: it is what makes the `max_staleness_ms` demo legible, it is
-        # why the token is spent after the cache and not before (ADR-024), and
+        # why the token is spent after the cache and not before, and
         # it is what lets the k6 profile measure this engine rather than these
         # sleeps. Moving it above the cache check would quietly break all three.
         #

@@ -1,6 +1,6 @@
 # Three services, deliberately: app, postgres, redis.
 #
-# ADR-016 — no Jaeger and no OTLP collector. The trace requirement is met with an
+# No Jaeger and no OTLP collector. The trace requirement is met with an
 # in-process exporter and a rendered waterfall, so a fourth container would only
 # cost cold-start time against the "healthy in under 60s" submission gate.
 #
@@ -24,14 +24,14 @@ services:
       TEST_MODE: ${TEST_MODE:-0}
       DEFAULT_SCOPES: ${DEFAULT_SCOPES:-query:execute}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      # ON here, OFF by default in src/config.py (ADR-038). The mocks answer in
+      # ON here, OFF by default in src/config.py. The mocks answer in
       # ~2ms, and a trace where both sources are free and DuckDB is the cost is
       # the inverse of how a federated query really behaves — so the running
-      # stack simulates the round trip HLD line 39 says these mocks simulate.
+      # stack simulates the round trip a real connector would pay.
       # Applied on the live path only, so a cache hit is still ~0.4ms and the
       # k6 run still measures the engine.
       MOCK_LATENCY_SCALE: ${MOCK_LATENCY_SCALE:-1.0}
-      # Must be passed through, or `OTEL_EXPORTER=none make load` in Phase 4
+      # Must be passed through, or `OTEL_EXPORTER=none make load`
       # silently keeps exporting and distorts the very latency k6 measures.
       OTEL_EXPORTER: ${OTEL_EXPORTER:-file}
       OTEL_TRACE_FILE: ${OTEL_TRACE_FILE:-traces/spans.jsonl}
@@ -46,8 +46,8 @@ services:
       SYNTHETIC_ROWS: ${SYNTHETIC_ROWS:-0}
       SYNTHETIC_KEYSPACE: ${SYNTHETIC_KEYSPACE:-20}
       DUCKDB_MAX_INSTANCES: ${DUCKDB_MAX_INSTANCES:-32}
-    # ADR-016 keeps tracing backend-free, so the JSONL span log *is* the
-    # artifact. Bind-mounted rather than left in the container so Phase 4 can
+    # Tracing is backend-free, so the JSONL span log *is* the artifact.
+    # Bind-mounted rather than left in the container so the renderer can
     # render the waterfall from the host after `make down`.
     volumes:
       - ./traces:/app/traces
@@ -73,7 +73,7 @@ services:
   # nothing against the sub-60s cold-start gate — `docker compose up` ignores a
   # profiled service entirely. It joins the compose network and reaches the app
   # at `http://app:8000`, deliberately NOT `host.docker.internal`, which is a
-  # Docker-Desktop-ism that does not exist on plain Linux (ADR-044).
+  # Docker-Desktop-ism that does not exist on plain Linux.
   #
   # Running it from its own container is what lets `make load` work on a fresh
   # clone with no k6 installed — the sub-60s quickstart claim depends on the
@@ -95,8 +95,8 @@ services:
       # being redirected: stdout carries the live progress bar and ANSI escapes,
       # which do not belong in a submission artifact.
       - ./docs/artifacts/load:/artifacts
-    # SCRIPT selects the profile: query_load.js is Phase 4's single-tenant
-    # throughput run, multitenant.js is Phase 5's realistic S3 scenario.
+    # SCRIPT selects the profile: query_load.js is the single-tenant throughput
+    # run, multitenant.js the realistic multi-tenant scenario.
     entrypoint: ["sh", "-c", "k6 run /load/${SCRIPT:-multitenant.js}"]
     depends_on:
       app:
@@ -108,7 +108,7 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: universal_sql
-    # Published on 55432, NOT 5432. Phase 0 published no port at all, on the
+    # Published on 55432, NOT 5432. Publishing no port at all was the
     # grounds that a developer machine very often already has something on
     # 5432 — which an unusual port avoids while still letting host-side
     # integration tests assert what is actually IN the control plane. `app`

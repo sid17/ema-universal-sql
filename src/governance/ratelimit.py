@@ -2,12 +2,11 @@
 
 **One key per ``(tenant, connector)``** — ``ratelimit:{tenant_id}:{connector_type}``
 — matching the primary key of ``rate_limit_policies`` exactly, so every bucket's
-capacity comes from a seeded row. The phase file originally specified three
-nested buckets including a per-*user* one, but the schema has no per-user budget
-row and no column to hold one, so that bucket could only ever be handed an
-invented limit. A bucket whose capacity is fabricated is a constant, not a
-fairness mechanism (ADR-020). Per-user fairness inside a tenant is the DRR
-scheduler the design doc describes and the README lists as described-not-built.
+capacity comes from a seeded row. A per-*user* bucket was considered and
+rejected: the schema has no per-user budget row, so that bucket could only ever
+be handed an invented limit, and a bucket whose capacity is fabricated is a
+constant rather than a fairness mechanism. Per-user fairness inside a tenant
+needs a fair scheduler, which is described but not built.
 
 **Refill and consume are one Lua script**, so a concurrent caller cannot read a
 token count between another caller's refill and its decrement. ``remaining``
@@ -18,7 +17,7 @@ trip is not atomic with the first, so the ``/metrics`` gauge and the envelope's
 The script is also the *only* place the bucket arithmetic exists. A Python
 mirror of it for unit tests would be two implementations of the same formula,
 where the test passes while production is wrong — so the tests run this script,
-against ``fakeredis[lua]`` (ADR-019).
+against ``fakeredis[lua]``.
 """
 
 import math
@@ -147,7 +146,7 @@ class TokenBucketRateLimiter:
     from inside ``adapter.fetch()``, *after* the cache is consulted, never as a
     route dependency: a route-level limiter would spend a token on a cache hit,
     which makes no downstream call and therefore consumes none of the downstream
-    budget this bucket models (ADR-024).
+    budget this bucket models.
     """
 
     def __init__(self, redis: Any, now_ms: NowMs = wall_clock_ms) -> None:
@@ -191,7 +190,7 @@ class TokenBucketRateLimiter:
 
         ``ApiError`` fills in the async-reroute ``suggested_action`` for
         ``RATE_LIMIT_EXHAUSTED`` itself, so the friendly error names the way out
-        no matter which connector raised it (brief lines 110/158).
+        no matter which connector raised it.
         """
         decision = await self.try_consume(tenant_id, connector_type, policy)
         if not decision.allowed:

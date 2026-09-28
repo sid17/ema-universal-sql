@@ -4,10 +4,10 @@
 #
 # Three things this does that a bare `python scripts/waterfall.py` cannot:
 #
-#   1. **Truncates the span log first.** ADR-018 opens it in append mode, so it
-#      accumulates across every run and every branch. Rendering "the newest
-#      trace" from a 34MB file risks an artifact that quietly describes code
-#      that is no longer checked out (ADR-045).
+#   1. **Truncates the span log first.** The exporter opens it in append mode,
+#      so it accumulates across every run and every branch. Rendering "the
+#      newest trace" from a 34MB file risks an artifact that quietly describes
+#      code that is no longer checked out.
 #   2. **Forces a LIVE fetch** with `max_staleness_ms: 0`. A cache hit costs
 #      ~0.4ms, so a cached trace would show the connectors as free and make the
 #      waterfall argue the opposite of what it exists to show.

@@ -6,7 +6,7 @@
 # per grant at seed time and writes only Fernet ciphertext, encrypted with the
 # owning tenant's own key, into `secrets.ciphertext`.
 #
-# WHY NOT A VAULT CONTAINER (ADR-026). Moving the value to Vault would relocate
+# WHY NOT A VAULT CONTAINER. Moving the value to Vault would relocate
 # the plaintext rather than remove it — something still has to put the token
 # into Vault, and Vault itself needs a bootstrap root token that would then live
 # in docker-compose.yml. A secrets system's root of trust has to come from
@@ -19,7 +19,7 @@
 # value someone memorised.
 #
 # In production `secret_ref` is the same pointer, resolved against Vault KV or a
-# KMS-encrypted entry instead of the `secrets` table (ADR-006). The grant rows
+# KMS-encrypted entry instead of the `secrets` table. The grant rows
 # below do not change.
 
 grants:
@@ -48,7 +48,7 @@ grants:
 
   # tenant_globex has NO Jira grant, deliberately.
   #
-  # `CONNECTOR_NOT_ENABLED` is one of the six codes design-doc §8.1 publishes,
+  # `CONNECTOR_NOT_ENABLED` is one of the six published error codes,
   # and until this phase no seeded state could produce it — a declared code with
   # no reachable path is a claim, not a feature. Running the canonical query
   # (which reads `jira.issues`) as tenant_globex is now the one-line

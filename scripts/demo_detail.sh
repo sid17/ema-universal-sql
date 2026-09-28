@@ -33,7 +33,7 @@ SCENES=0
 SECTIONS=0
 
 # --- the queries under test --------------------------------------------------
-# CANONICAL is byte-identical to scripts/demo.sh's and to design-doc 6.1. The
+# CANONICAL is byte-identical to scripts/demo.sh's. The
 # 3 -> 1 -> 0 proof rests on alice, bob and carol receiving the SAME string, so
 # it lives in one variable and is never retyped.
 CANONICAL="SELECT pr.title, pr.author, issue.key, issue.status
@@ -75,7 +75,7 @@ section() {
   echo "################################################################################"
 }
 
-# Ported from scripts/demo.sh (LAW 2), widened to take role/tenant/scopes — all
+# Ported from scripts/demo.sh, widened to take role/tenant/scopes — all
 # three are already MockTokenRequest fields; demo.sh just hardcodes them.
 token() {
   local user="$1" role="$2" tenant="$3" scopes="$4"
@@ -169,7 +169,7 @@ EOF
               -H 'content-type: application/json' -d "$body")
 
   echo "  <- HTTP $http"
-  # Retry-After is part of the 429 contract (brief line 110) and invisible in a
+  # Retry-After is part of the 429 contract and invisible in a
   # body-only artifact, so it is surfaced whenever the source sends it.
   grep -i '^retry-after:' "$HDRS" | sed 's/^/  <- /' || true
   render

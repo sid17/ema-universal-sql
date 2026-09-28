@@ -1,9 +1,8 @@
-# The minimal policy config the brief asks for (line 154): one RLS rule and one
-# column mask, shipped as YAML in the repo exactly as design-doc §6.2/§8.2
-# promises. Loaded into `policies` by scripts/seed.py.
+# The minimal policy config: one RLS rule and one column mask, shipped as YAML
+# in the repo. Loaded into `policies` by scripts/seed.py.
 #
-# The RLS predicate is stored as a JSONB **AST**, never as a SQL string
-# (ADR-008). A policy that is a string of SQL can only be applied by
+# The RLS predicate is stored as a JSONB **AST**, never as a SQL string.
+# A policy that is a string of SQL can only be applied by
 # concatenating it into a query, which is both an injection surface and
 # impossible to analyse; an AST can be compiled into the plan, pushed down to a
 # source, and re-applied authoritatively by the engine.
@@ -32,7 +31,7 @@ policies:
   # `hash` rather than `drop` deliberately: the column still appears in the
   # result with a stable value, so a caller can group by it without ever
   # learning the address. Dropping it would change the result shape and make
-  # the mask invisible in the UI — the Phase 3 spec needs it visible.
+  # the mask invisible in the response, where it should be visible.
   - policy_id: cls-jira-reporter
     tenant_id: tenant_acme
     connector_type: jira
@@ -48,16 +47,16 @@ policies:
   # --- DENY: an explicit deny, which overrides any matching allow --------------
   # Two things this fixture exists to prove, and neither is provable without it:
   #
-  #   1. `ENTITLEMENT_DENIED` is REACHABLE. It is one of the six codes the design
-  #      doc publishes (§8.1); a declared code no seeded state can produce is a
-  #      claim, not a feature.
+  #   1. `ENTITLEMENT_DENIED` is REACHABLE. It is one of the six published error
+  #      codes; a declared code no seeded state can produce is a claim, not a
+  #      feature.
   #   2. deny-overrides is real. Give a token BOTH `support` (which the allow
   #      above matches) and `auditor` (which this matches) and the result must be
   #      403, not the allow winning.
   #
   # `kind: RLS` with `effect: deny` and NO predicate reads as "deny every row of
   # this resource". A predicate here would mean "deny these rows", which is a
-  # different and much subtler feature that nothing in the brief asks for (LAW 5).
+  # different and much subtler feature that nothing here needs.
   #
   # Scoped to a role no persona holds by default, so the canonical alice/bob/carol
   # demo is completely untouched. The tests mint their own `auditor` token.

@@ -102,7 +102,7 @@ class RateLimitDialect:
         """The refusal, in this source's own shape.
 
         Produced when *our* governor denies, because in this system the token
-        bucket **is** the source's quota (ADR-024: the bucket models the
+        bucket **is** the source's quota (the bucket models the
         downstream API's budget). No call goes out — we refuse on the source's
         behalf, in the source's vocabulary, and the adapter then normalises it.
         """

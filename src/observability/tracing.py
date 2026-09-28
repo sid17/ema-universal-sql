@@ -1,15 +1,15 @@
 """OpenTelemetry tracer provider and the `@stage_span` decorator.
 
-ADR-016: there is **no** OTLP exporter and no tracing backend in `docker-compose`
-— the spans carry parents and durations, which is all the Phase 4 waterfall needs.
+There is **no** OTLP exporter and no tracing backend in `docker-compose` — the
+spans carry parents and durations, which is all the waterfall artifact needs.
 The sink is chosen by ``OTEL_EXPORTER``: ``file`` (JSONL, the waterfall artifact),
 ``console`` (local debugging) or ``none`` (the k6 run). Tests bind an in-memory one.
 
 `stage_span` is deliberately a *thin* wrapper over `tracer.start_as_current_span`
 (runtime-verified: the first-party API already works as a bare decorator,
 auto-parents nested spans and records start/end times). What this module adds is
-(a) the stage naming convention and (b) the elapsed-ms attribute that Phase 2
-reads into `QueryEnvelope.stats.connector_ms`.
+(a) the stage naming convention and (b) the elapsed-ms attribute that is read
+into `QueryEnvelope.stats.connector_ms`.
 """
 
 from __future__ import annotations
@@ -59,8 +59,8 @@ _TRACE_FILE: IO[str] | None = None
 def _as_jsonl(span: ReadableSpan) -> str:
     """One span, one line — `to_json()` pretty-prints across lines by default.
 
-    Phase 4 greps this file by `trace_id`, so a multi-line record would break
-    every line-oriented tool pointed at it.
+    The waterfall renderer greps this file by `trace_id`, so a multi-line
+    record would break every line-oriented tool pointed at it.
     """
     return span.to_json(indent=None) + "\n"
 
@@ -68,7 +68,7 @@ def _as_jsonl(span: ReadableSpan) -> str:
 def _open_trace_file(path: str) -> IO[str] | None:
     """Open `path` for appending, creating its parent. None if that failed.
 
-    LAW 4: a bad path must not vanish silently, and must not take the whole app
+    A bad path must not vanish silently, and must not take the whole app
     down either — tracing is diagnostics. The caller logs the fallback.
     """
     try:
@@ -101,7 +101,7 @@ def _configured_processor() -> SpanProcessor | None:
             exporter = ConsoleSpanExporter(out=_TRACE_FILE, formatter=_as_jsonl)
 
     # Batch, never Simple: `SimpleSpanProcessor` exports on the request thread,
-    # so the export cost would land inside the latency Phase 4 measures.
+    # so the export cost would land inside the latency being measured.
     return BatchSpanProcessor(exporter)
 
 
@@ -176,7 +176,7 @@ def _record_elapsed(span: trace.Span, started: float) -> None:
 def stage_span(name: str) -> Callable[[F], F]:
     """Wrap a pipeline stage in a span named `name`, recording its elapsed ms.
 
-    Works on both sync and async callables — Phase 2's connector calls are
+    Works on both sync and async callables — the connector calls are
     coroutines, and wrapping one with a sync wrapper would close the span before
     the await ever ran, timing the coroutine's *creation* instead of its work.
     """

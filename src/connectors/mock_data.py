@@ -2,8 +2,8 @@
 
 **Deterministic means literally constant**: no randomness, no ``datetime.now()``,
 no generation at import. A reviewer re-running the demo tomorrow must see the
-same rows as the screenshots, and Phase 2's row-count assertions must hold in
-CI in six months.
+same rows as the screenshots, and the row-count assertions must hold in CI in
+six months.
 
 **The persona contract this file exists to satisfy.** Running the canonical
 query (open PRs in ``ema/core`` joined to ``In Progress`` issues) under the RLS
@@ -16,7 +16,7 @@ Persona    Rows   What it proves
 ``alice``  3      the entitled subset
 ``bob``    1      RLS **shrinks** the set — non-zero, so it cannot be
                   mistaken for a broken query
-``carol``  0      the ``empty`` leg of the trichotomy (Phase 2)
+``carol``  0      the ``empty`` leg of the trichotomy
 =========  =====  ===================================================
 
 ``bob`` being 1 rather than 0 is the whole point: a count that drops to zero
@@ -34,7 +34,7 @@ indistinguishable from one that works.
 
 **One ``updated`` value is deliberately duplicated.** ``SUP-13`` and ``SUP-14``
 share a timestamp, so the result ordering is non-total without its ``key ASC``
-tiebreaker (HLD §9). See the comment on that row.
+tiebreaker. See the comment on that row.
 
 The rows are written as tuples against a column header rather than as literal
 dicts purely so each row fits on one readable line — the dicts below are what
@@ -53,8 +53,8 @@ _JIRA_ROWS = [
     # --- alice: three In Progress, each with exactly one open PR in ema/core ---
     ("SUP-12", "In Progress", "alice", "dana@acme.com", "SUP", "2026-09-27T14:05:00Z"),
     ("SUP-13", "In Progress", "alice", "evan@acme.com", "SUP", "2026-09-27T11:40:00Z"),
-    # SUP-14 shares SUP-13's `updated` DELIBERATELY. HLD §9 makes the result
-    # ordering `updated DESC, key ASC`, and the tiebreaker is not cosmetic: the
+    # SUP-14 shares SUP-13's `updated` DELIBERATELY. The result ordering is
+    # `updated DESC, key ASC`, and the tiebreaker is not cosmetic: the
     # result cursor is an offset, and an offset over a non-total order skips or
     # duplicates rows between pages. Every other timestamp in this file is
     # distinct, so without this tie the pagination test would page through a
@@ -99,7 +99,7 @@ GITHUB_COLUMNS = (
     "updated_at",
 )
 
-#: ``issue_key`` is the derived equijoin column (ADR-009) — a real repository
+#: ``issue_key`` is the derived equijoin column — a real repository
 #: would parse it out of the branch name or PR title; here it is materialised so
 #: the join is a genuine equijoin rather than a fuzzy ``LIKE``.
 _GITHUB_ROWS = [
@@ -143,8 +143,8 @@ _GITHUB_ROWS = [
      "SUP-32", "2026-09-14T10:30:00Z", "2026-09-21T17:30:00Z"),
     (117, "Plan the residency migration", "nic-dev", "ema/core", "open",
      "SUP-33", "2026-09-13T09:45:00Z", "2026-09-20T11:10:00Z"),
-    # --- an open PR whose issue_key matches NO issue: un-joinable. Phase 2 must
-    #     report these as un-joined rather than dropping them silently or
+    # --- an open PR whose issue_key matches NO issue: un-joinable. The engine
+    #     must report these as un-joined rather than dropping them silently or
     #     passing them off as joined (join_status: incomplete).
     (118, "Chore: bump dependencies", "ana-dev", "ema/core", "open",
      "SUP-999", "2026-09-12T12:00:00Z", "2026-09-27T12:00:00Z"),

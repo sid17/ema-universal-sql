@@ -1,10 +1,8 @@
 #!/usr/bin/env bash
 #
-# The scripted walkthrough. Four calls, four of the five hard parts, no UI and no
-# observability stack — this is the artifact insurance named in the phase file:
-# both other submission artifacts (the console screenshot, the trace waterfall)
-# live in later phases, so a slip there would otherwise leave the submission with
-# no demo at all.
+# The scripted walkthrough. Four calls, four of the five hard parts, no UI and
+# no observability stack — so it runs anywhere the stack runs and needs nothing
+# else to be working.
 #
 #   1. alice  -> the entitled answer
 #   2. bob    -> RLS visibly shrinks it (3 -> 1), same SQL

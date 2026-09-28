@@ -7,12 +7,12 @@ much time had passed and silently over- or under-admit requests. Anything whose
 state outlives the process must use wall time. (``ControlPlaneRepository`` uses
 ``time.monotonic()`` and is right to: its cache is in-process and never shared.)
 
-**The clock is injected, not called directly.** Phase 1's gate includes
-``test_bucket_burst``, which asserts that after exactly one refill interval
+**The clock is injected, not called directly.** ``test_bucket_burst`` asserts
+that after exactly one refill interval
 exactly one more request is admitted. With a hard-coded clock that assertion
 costs a real 12-second sleep inside the suite the pre-commit hook runs; with an
 injected clock it is an in-memory comparison. The pattern is taken from
-``PyrateLimiter``'s ``AbstractClock`` — see ADR-019.
+``PyrateLimiter``'s ``AbstractClock``.
 """
 
 import time

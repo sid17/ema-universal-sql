@@ -106,7 +106,7 @@ async def run_fetch(lab: Lab, args: argparse.Namespace) -> int:
     try:
         result = await adapter.fetch(fetch_request)
     except ApiError as refused:
-        # LAW 4: the capability model's own message, and a non-zero exit — a
+        # The capability model's own message, and a non-zero exit — a
         # refusal that printed like a result would be the worst possible output
         # for a tool whose job is showing what the contract allows.
         print(f"{refused.code.value}: {refused.message}", file=sys.stderr)

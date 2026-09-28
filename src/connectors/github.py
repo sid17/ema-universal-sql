@@ -2,8 +2,8 @@
 
 Everything structural — the six-step ``fetch()`` order, predicate validation,
 pagination, caching — lives in :class:`~src.connectors.mock_adapter.MockConnectorAdapter`.
-This class carries only what is genuinely GitHub-shaped, and after Phase 6 that
-is exactly one thing: **the rows a GitHub API call would return**.
+This class carries only what is genuinely GitHub-shaped, which is exactly one
+thing: **the rows a GitHub API call would return**.
 
 Everything else arrives as a seeded row from ``config/connectors/github.yaml``:
 the host, the path template, the auth scheme, the API headers, the rate-limit
@@ -63,7 +63,7 @@ class GitHubConnectorAdapter(MockConnectorAdapter):
     DATASETS = {"pull_requests": github_rows}
 
     #: The faster of the two sources, so the waterfall has a contrast to show
-    #: rather than two equal bars (ADR-038).
+    #: rather than two equal bars.
     simulated_latency_ms = 40.0
 
     # -- the wire shape ---------------------------------------------------

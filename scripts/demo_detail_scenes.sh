@@ -8,7 +8,7 @@
 # able to scan the `scene` calls and know exactly what is covered without
 # running anything or reading any source.
 #
-# Split from the runner at LAW 1's 400-line threshold. Every section starts with
+# Split from the runner to keep both readable. Every section starts with
 # `reset` so the artifact reproduces from any starting state — except §4, which
 # must NOT reset between its own scenes (its cache-hit scene depends on the
 # entry the live scene wrote).
@@ -28,7 +28,7 @@ section_1() {
 
   scene "1.2" "the canonical two-source join" \
         "200, join_status 'complete', both connectors in sources[]" \
-        --note "design-doc §6.1 verbatim; this is the query every other scene varies"
+        --note "the canonical query every other scene varies"
   TRACE_ID=$(trace_of)
 
   scene "1.3a" "pagination, page 1 of LIMIT 2" \
@@ -45,8 +45,8 @@ section_1() {
 
   echo
   rule
-  echo "  1.4 — the policy config itself (brief line 154: \"a minimal policy config"
-  echo "        expressing one RLS rule and one column mask\"). config/policies.yaml,"
+  echo "  1.4 — the policy config itself: one RLS rule and one column mask."
+  echo "        config/policies.yaml,"
   echo "        which is what §2 below turns on. Printed rather than described: the"
   echo "        ask is to see the config, not only its effect."
   rule
@@ -142,7 +142,7 @@ section_4() {
 }
 
 section_5() {
-  section "5. THE ERROR VOCABULARY" "design-doc §8.1: six codes, each with the call that produces it"
+  section "5. THE ERROR VOCABULARY" "six codes, each with the call that produces it"
   reset
   scene "5.1" "SOURCE_TIMEOUT — jira forced to time out" \
         "200 partial: join_status 'incomplete', next_cursor null, a warning naming jira" \
@@ -173,7 +173,7 @@ section_5() {
   echo "  Two failures are deliberately NOT in this vocabulary and carry their own"
   echo "  types instead: 401 UnauthenticatedError (transport) and 400"
   echo "  InvalidQueryError (request shape, §6 below). Diluting the six would"
-  echo "  desync the prototype from the design doc it shares them with."
+  echo "  make a domain code mean \"your request was malformed\" instead."
   rule
 
 }

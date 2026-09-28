@@ -1,33 +1,32 @@
 """Prometheus metrics: the golden-signal collectors plus the three we own.
 
-ADR-015: there is exactly **one** `/metrics` route and `src/gateway/routes.py`
-owns it. We take the instrumentator's collectors (`.instrument(app)`) and
-decline its route (`.expose(app)`), which would otherwise register a second,
-competing `/metrics`. Both metric families land in `prometheus_client`'s shared
+There is exactly **one** `/metrics` route and `src/gateway/routes.py` owns it.
+We take the instrumentator's collectors (`.instrument(app)`) and decline its
+route (`.expose(app)`), which would otherwise register a second, competing
+`/metrics`. Both metric families land in `prometheus_client`'s shared
 `REGISTRY`, so one `generate_latest(REGISTRY)` scrape carries all of them.
 
-**Phase 4 adds the two histograms the phase file names and never had** — the
-golden signals the instrumentator supplies are per-*route*, which cannot answer
-"how long did Jira take". It also adds the three `observe_*` / `set_*` helpers,
-so no call site outside this module imports `prometheus_client` or reaches for a
-registry global: one module owns the registry, and the rest of the codebase
-records numbers through named functions.
+**Two histograms of our own**, because the golden signals the instrumentator
+supplies are per-*route* and cannot answer "how long did Jira take". Plus three
+`observe_*` / `set_*` helpers, so no call site outside this module imports
+`prometheus_client` or reaches for a registry global: one module owns the
+registry, and the rest of the codebase records numbers through named functions.
 
-**Multiprocess mode (Phase 5).** The default is now 8 uvicorn workers, and
+**Multiprocess mode.** The default is 8 uvicorn workers, and
 `prometheus_client`'s `REGISTRY` is **per process** — so a scrape would report
 whichever worker happened to answer, silently dividing every counter by eight.
 When `PROMETHEUS_MULTIPROC_DIR` is set, each worker writes its samples to that
 directory and `render_metrics` builds a **fresh** `CollectorRegistry` per scrape
-with a `MultiProcessCollector` over it. ADR-015 still holds — `/metrics` is one
-route we own — but the registry it renders from changes. Two consequences worth
+with a `MultiProcessCollector` over it. `/metrics` is still the one route we
+own; only the registry it renders from changes. Two consequences worth
 naming: a `Gauge` needs an explicit `multiprocess_mode`, and the `process_*` /
 `python_gc_*` collectors do not work in this mode at all.
 
-A note on label names. The phase file asks for `http_requests_total{route,code}`;
-the instrumentator spells them `{handler,method,status}`. We keep its spelling
-(ADR-040) — matching ours would mean replacing the library's default collectors
-to rename two labels, which buys no behaviour and moves the golden signals onto
-a code path nothing else exercises. The phase file is corrected instead.
+A note on label names. The instrumentator spells its labels
+`{handler,method,status}` rather than `{route,code}`, and we keep its spelling:
+renaming them would mean replacing the library's default collectors, which buys
+no behaviour and moves the golden signals onto a code path nothing else
+exercises.
 """
 
 from __future__ import annotations
@@ -82,7 +81,7 @@ def _get_or_create(
     reads the registry's index directly. Verified against the library: a
     `Histogram` registers its base name as well as the `_bucket`/`_count`/`_sum`
     suffixes, so the base name is a valid key for both metric types. A
-    `ValueError` that is *not* a duplicate propagates (LAW 4).
+    `ValueError` that is *not* a duplicate propagates.
     """
     try:
         return metric(name, doc, labels, registry=REGISTRY, **kwargs)
@@ -94,7 +93,7 @@ def _get_or_create(
 
 
 #: Per-connector, per-tenant budget left. Fed from `ResultAssembler._budgets`,
-#: which is the one place already asking the bucket for this number (ADR-043).
+#: which is the one place already asking the bucket for this number.
 #:
 #: `multiprocess_mode="livemostrecent"`, and the mode is a **correctness**
 #: decision rather than a formatting one.
@@ -112,7 +111,7 @@ def _get_or_create(
 #: "budget exhausted" fires for a tenant who is fine. It also made the gauge and
 #: `QueryEnvelope.rate_limit_status` report different numbers for the same
 #: bucket while both looked authoritative, which is worse than having no metric
-#: at all (ADR-043 exists to prevent exactly that). See
+#: at all. See
 #: `tests/unit/test_metrics_multiprocess.py`.
 #:
 #: `live*` is still wanted: it drops the readings of workers that have exited,
@@ -127,7 +126,7 @@ rate_limit_remaining = _get_or_create(
 
 #: End-to-end query latency — the histogram P50/P95 are read off.
 #:
-#: Observed in the **route**, not the runner, and in a `finally` (ADR-040). A
+#: Observed in the **route**, not the runner, and in a `finally`. A
 #: histogram that only sees successes reports a P95 better than the one users
 #: experience, and entitlement denials and 400s never reach the runner at all.
 query_duration_seconds = _get_or_create(
@@ -137,7 +136,7 @@ query_duration_seconds = _get_or_create(
 )
 
 #: Per-connector fetch latency. The third view of `SourceFetch.elapsed_ms` — the
-#: span (ADR-037) and the envelope's `stats.connector_ms` are the other two, and
+#: span and the envelope's `stats.connector_ms` are the other two, and
 #: all three read the same `perf_counter` pair so they cannot disagree.
 connector_fetch_duration_seconds = _get_or_create(
     Histogram,

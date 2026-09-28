@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 """Render one trace from ``traces/spans.jsonl`` as a waterfall.
 
-**Standard library only, and that is the point.** ADR-016 declined a tracing
-backend and ADR-018 chose JSONL spans, so there is no Jaeger UI to screenshot.
-This script is the other half of that bargain: the span log is the artifact, and
+**Standard library only, and that is the point.** There is no tracing backend
+and no Jaeger UI to screenshot — spans are written as JSONL. This script is the
+other half of that bargain: the span log is the artifact, and
 this is what makes it readable. Adding matplotlib for one image, or a fourth
 container against a sub-60s cold-start gate, would both buy less than they cost.
 
 What it produces is deliberately *text first*. A text waterfall diffs, greps,
 pastes into a README and cannot go stale relative to the code that made it. An
-SVG is emitted alongside for the PNG the submission gate names by filename.
+SVG is emitted alongside, for the PNG the submission attaches.
 
-**It refuses to render an incomplete trace** (LAW 4). ``BatchSpanProcessor``
+**It refuses to render an incomplete trace.** ``BatchSpanProcessor``
 drops whatever is still queued when the process exits, so the newest trace in
 the file is routinely missing its tail — and a waterfall with holes in it reads
 as an engine bug rather than as a truncated log. Better to fail naming the

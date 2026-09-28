@@ -1,7 +1,7 @@
 """The forced-failure hook, held in Redis rather than in one worker's memory.
 
 ``POST /v1/test/fail-next`` arms a one-shot connector failure so that "a source
-times out, the answer degrades to partial" (brief line 84, DoD §2 hard part 5)
+times out, the answer degrades to partial"
 is demonstrable on demand instead of only during a real outage.
 
 **Why Redis.** The hook used to live in a dict on ``ConnectorRegistry``, which is
@@ -65,7 +65,7 @@ class FailureHookStore:
         try:
             return FailureMode(value)
         except ValueError:
-            # LAW 4: a hook we cannot read is a bug, not a reason to serve
+            # A hook we cannot read is a bug, not a reason to serve
             # normally and leave the caller wondering why nothing failed.
             logger.error(
                 "discarding an unreadable forced-failure hook",

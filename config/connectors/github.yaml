@@ -1,7 +1,7 @@
 # GitHub — connector definition.
 #
 # Onboarding a connector is ONE file like this plus one adapter class (take-home
-# line 29: admins onboard "via console or config"). Onboarding another GitHub
+# admins onboard via console or config). Onboarding another GitHub
 # **API call** is one more entry under `resources:` and NO Python at all — which
 # is the point of the `api:` / `resources:` split below.
 #
@@ -66,7 +66,7 @@ resources:
         - updated_at
 
       # Only non-string columns need declaring; everything else defaults to
-      # string. Phase 2 needs a type BEFORE it has a row to look at: the Arrow
+      # string. The engine needs a type BEFORE it has a row to look at: the Arrow
       # schema handed to duckdb.register must be explicit (an empty result infers
       # zero columns and DuckDB refuses to register it), and
       # QueryEnvelope.columns[].type is part of the response contract.

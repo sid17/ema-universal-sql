@@ -11,7 +11,7 @@ are what let one contract describe two sources that page and filter differently:
 2. **A capability is (predicate support) + (where to inject it).** Knowing that
    GitHub can filter on ``state`` is useless without knowing it goes in the
    query string while ``repo`` goes in the path. :class:`CapabilityModel` carries
-   both, which is what makes Phase 2's pushdown split mechanical.
+   both, which is what makes the planner's pushdown split mechanical.
 
 These are plain dataclasses, not Pydantic models: they never cross an HTTP
 boundary. Only :mod:`src.models.envelope` is serialized to a caller, so paying
@@ -128,7 +128,7 @@ class CapabilityModel:
 
     Built **from the seeded dict**, never hand-written in the adapter, so the
     adapter and the control plane cannot disagree about what is filterable.
-    Phase 2's planner reads the same dict to decide what to push down.
+    The planner reads the same dict to decide what to push down.
     """
 
     columns: tuple[str, ...]
@@ -138,15 +138,14 @@ class CapabilityModel:
     column_types: Mapping[str, str] = field(default_factory=dict)
     """Declared type per column. Only non-``string`` columns need listing.
 
-    Added in Phase 2 for two consumers that both need a type *before* they have
-    a row to look at:
+    Two consumers both need a type *before* they have a row to look at:
 
     - the Arrow schema handed to ``duckdb.register`` must be explicit, because
       ``pa.Table.from_pylist([])`` infers zero columns and DuckDB then refuses
-      to register the table at all (ADR-030). Inferring from rows would also let
+      to register the table at all. Inferring from rows would also let
       one source register as ``int64`` on a request that returned data and
       ``string`` on one that did not.
-    - ``QueryEnvelope.columns[].type`` (HLD §4).
+    - ``QueryEnvelope.columns[].type``.
     """
 
     @classmethod
@@ -181,8 +180,8 @@ class AdapterResponse:
 
     ``fetched_at`` is epoch **seconds** (the envelope derives ``freshness_ms``
     from it) while every governance primitive works in milliseconds — the
-    boundary is here, deliberately and in one place, because HLD §4 fixes the
-    field's unit.
+    boundary is here, deliberately and in one place, because the envelope fixes
+    the field's unit.
     """
 
     rows: list[dict[str, Any]]

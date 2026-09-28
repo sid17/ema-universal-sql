@@ -2,7 +2,7 @@
 #
 # ONE bucket per (tenant, connector) — matching this table's primary key, so
 # every capacity below comes from a real row rather than an invented per-user
-# limit (ADR-020). `capacity = max_requests + burst`: a cold bucket admits that
+# limit. `capacity = max_requests + burst`: a cold bucket admits that
 # many back-to-back before throttling, then refills at
 # `window_sec / max_requests` per token.
 #
@@ -10,7 +10,7 @@
 #   * tenant_acme's GitHub budget is deliberately TINY so `make demo` drains it
 #     in a short loop and the 429 + Retry-After + async-reroute hint is
 #     deterministic rather than a matter of timing.
-#   * tenant_load is the ONLY tenant k6 may target (HLD §9). A 5-request budget
+#   * tenant_load is the ONLY tenant k6 may target. A 5-request budget
 #     and a 500-QPS load test cannot coexist on one tenant — the load run would
 #     measure nothing but throttling.
 
@@ -28,7 +28,7 @@ rate_limits:
     window_sec: 60
     burst: 5
 
-  # --- the k6 tenant: must NOT throttle (see Phase 4) -----------------------
+  # --- the k6 tenant: must NOT throttle --------------------------------------
   - tenant_id: tenant_load
     connector_type: github
     max_requests: 5000

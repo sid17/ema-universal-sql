@@ -1,11 +1,10 @@
-"""Connector failures, normalized into a vocabulary Phase 2 can act on.
+"""Connector failures, normalized into a vocabulary the pipeline can act on.
 
-**What this module is, and what it deliberately is not** (ADR-022).
+**What this module is, and what it deliberately is not.**
 
-Research Card 2 (``airbyte-python-cdk``) contributes a match→action table
-instead of ad-hoc ``try/except``: an action enum, a ``failure_type``, and a
-mapping from a source's native failure to both. That *vocabulary* is built here,
-because Phase 2 cannot assemble an honest envelope without it — it must tell a
+A match→action table instead of ad-hoc ``try/except``: an action enum, a
+``failure_type``, and a mapping from a source's native failure to both. That
+*vocabulary* is built here, because the envelope cannot be honest without it — it must tell a
 **timeout** (degrade to ``partial: true``, ``join_status: incomplete``) from an
 **auth error** (fail the query) from a **throttle** (``429`` with
 ``Retry-After``). That three-way split is exactly ``failure_type``.
@@ -14,8 +13,8 @@ The *machinery* around it — bounded exponential backoff, ``Retry-After``-drive
 waits, a per-connector circuit breaker — is **not** built. These adapters make
 no HTTP call, so a table keyed by HTTP status would map statuses that never
 arrive, and a breaker would guard a function that cannot fail transiently. That
-is a speculative abstraction (LAW 5); design-doc §5 describes the production
-design and the README says plainly that it is described, not running.
+would be a speculative abstraction; the design covers the production version and
+the README says plainly that it is described, not running.
 
 Note the consequence for the mapping's key: it is keyed by :class:`FailureMode`
 — what the *mock* can be told to do — not by status code. A status-keyed table
@@ -32,7 +31,7 @@ class Action(StrEnum):
     """What a caller should *do* about an outcome.
 
     Kept complete rather than trimmed to the cases a mock can produce, because
-    this enum is the shared vocabulary with design-doc §5 — a reader comparing
+    this enum is the shared vocabulary with the design — a reader comparing
     the two should find the same names. Only the mapping below is restricted to
     what actually occurs.
     """
@@ -120,7 +119,7 @@ DEFAULT_ERROR_MAPPING: dict[FailureMode, Classification] = {
 def classify(mode: FailureMode) -> Classification:
     """Normalize a source failure. Raises on an unmapped mode — never guesses.
 
-    LAW 4: a default branch returning something plausible would let a new
+    A default branch returning something plausible would let a new
     failure mode be silently classified as retryable, and a permanently broken
     connector would then be reported to callers as a transient gap.
     """
@@ -133,14 +132,14 @@ def classify(mode: FailureMode) -> Classification:
         ) from None
 
 
-#: HTTP status per error code, from design-doc §8.1 — the published table.
+#: HTTP status per error code — the published table.
 #:
 #: A lookup rather than an inline conditional, because the conditional it
 #: replaced (``504 if SOURCE_TIMEOUT else 502``) quietly gave
-#: ``CONNECTOR_AUTH_ERROR`` a 502 while every locked document says 403. HLD §9
-#: makes the error vocabulary a provenance rail that must be identical across
-#: the design doc, the HLD and every phase spec; a rail is much harder to break
-#: from a table that states it than from an ``else`` branch (ADR-029).
+#: ``CONNECTOR_AUTH_ERROR`` a 502 while the published table says 403. The error
+#: vocabulary is a provenance rail that must be identical across
+#: every layer that renders it; a rail is much harder to break from a table that
+#: states it than from an ``else`` branch.
 HTTP_STATUS_FOR_CODE = {
     ErrorCode.SOURCE_TIMEOUT: 504,
     ErrorCode.RATE_LIMIT_EXHAUSTED: 429,

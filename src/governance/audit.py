@@ -1,7 +1,7 @@
-"""The compliance access trail: one row per query (design-doc §3.4).
+"""The compliance access trail: one row per query.
 
 **``query_text`` stores the NORMALIZED SQL, with every literal replaced by
-``?``** (ADR-033). This is the whole reason the module is more than an INSERT.
+``?``**. This is the whole reason the module is more than an INSERT.
 
 The canonical CLS rule exists to stop ``reporter_email`` ever reaching a caller.
 But a query reading ``WHERE issue.reporter_email = 'dana@acme.com'`` would, with
@@ -72,7 +72,7 @@ class AuditLogger:
         """Insert the record.
 
         **A failed write is logged, not raised.** This is the one deliberate
-        exception to LAW 4's "log or throw" in this codebase, and the reasoning
+        exception to "log or throw" in this codebase, and the reasoning
         is worth stating: the query has already succeeded and the caller's rows
         are already correct and entitled. Failing the response because the audit
         INSERT failed would turn a logging outage into a customer-facing outage,

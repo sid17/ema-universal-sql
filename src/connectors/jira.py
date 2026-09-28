@@ -21,8 +21,8 @@ Jira's shape, and why it is the *interesting* one:
 - It refuses with **429** and a ``Retry-After`` where GitHub uses a 403 — the
   same fact in a different vocabulary, which is why the dialect is data.
 - This is the source that carries ``assignee`` (the RLS subject) and
-  ``reporter_email`` (the CLS-masked column), so Phase 2's entitlement work
-  lands here.
+  ``reporter_email`` (the CLS-masked column), so the entitlement work lands
+  here.
 """
 
 from typing import Any
@@ -56,7 +56,7 @@ class JiraConnectorAdapter(MockConnectorAdapter):
     #: and the CLS-masked column (``reporter_email``), so "the entitled source
     #: is also the expensive one" is the shape a reviewer should read off the
     #: waterfall — and it is what makes "P95 was Jira, not the engine" a
-    #: finding rather than a caption (ADR-038).
+    #: finding rather than a caption.
     simulated_latency_ms = 180.0
 
     # -- the wire shape ---------------------------------------------------

@@ -9,7 +9,7 @@ adapter special-casing the other.
 **The token this module hands out is opaque and self-describing.** Two reasons,
 both about what a caller could otherwise do by accident:
 
-1. A raw row index invites Phase 2 (or a UI) to construct a cursor by hand —
+1. A raw row index invites a caller (or a UI) to construct a cursor by hand —
    ``page = str(offset + limit)`` — which couples the caller to the mock's
    internal ordering. When a live adapter later replaces the mock, every
    hand-built cursor breaks in a way that looks like a data bug.
@@ -19,8 +19,7 @@ both about what a caller could otherwise do by accident:
 
 What is deliberately *not* built: literal ``Link:`` header formatting. A header
 is a transport detail of a real HTTP call, and no mock makes one. The pattern
-worth proving is the decoupling, not the string (DoD §3 tiers header simulation
-COULD).
+worth proving is the decoupling, not the string.
 """
 
 import base64
@@ -55,7 +54,7 @@ def encode_token(strategy: str, offset: int) -> str:
 def decode_token(token: str, expected_strategy: str) -> int:
     """Return the offset inside ``token``, or raise.
 
-    LAW 4: every failure raises rather than falling back to offset 0. Silently
+    Every failure raises rather than falling back to offset 0. Silently
     restarting at the first page would hand a caller paging through results a
     duplicate page and no indication anything went wrong — the caller would
     conclude the data was wrong, not the cursor.

@@ -7,18 +7,16 @@ caller. They are not the same knob and must not be collapsed: if a
 ``max_staleness_ms=0`` request wrote a zero-TTL entry, no later request could
 ever get a hit, and the freshness demo would be unreproducible.
 
-**The entitlement trap** (design-doc §4.3, ADR-025). The key carries
+**The entitlement trap.** The key carries
 ``tenant_id`` **and** ``entitlement_scope`` as mandatory segments. Omitting
 either does not degrade the cache — it serves one principal's rows to another.
 ``entitlement_scope`` is a *data* scope and is unrelated to the OAuth ``scope``
-claim in :class:`src.models.context.UserContext`; conflating the two is the leak
-that section names. Phase 2 computes the real scope; Phase 1 callers pass the
-caller's role as a documented placeholder, but the argument is **required** from
-day one so that "I forgot the scope" is a ``TypeError``, not a cross-tenant read.
+claim in :class:`src.models.context.UserContext`; conflating the two is the
+leak. The argument is **required** rather than defaulted, so that "I forgot the
+scope" is a ``TypeError`` rather than a cross-tenant read.
 
-No single-flight coalescing guard: it is COULD-tier in
-``02-DEFINITION-OF-DONE.md`` §3 and gets revisited at Phase 4 only if the k6 run
-shows a real thundering herd on ``tenant_load``.
+No single-flight coalescing guard: it would only pay for itself under a real
+thundering herd, which the load runs have not produced.
 """
 
 import hashlib
@@ -55,7 +53,7 @@ class CacheEntry:
     rows: list[dict[str, Any]]
     fetched_at: float
     """Epoch **seconds** — the unit ``AdapterResponse.fetched_at`` and the
-    envelope's ``freshness_ms`` are derived from (HLD §4)."""
+    envelope's ``freshness_ms`` are derived from."""
     etag: str | None = None
 
     meta: dict[str, Any] = field(default_factory=dict)
@@ -213,7 +211,7 @@ class FreshnessCacheManager:
     def _decode(raw: bytes | str, key: str) -> CacheEntry:
         """Parse a stored entry, failing loudly on corruption.
 
-        LAW 4: treating an undecodable entry as a miss would silently convert a
+        Treating an undecodable entry as a miss would silently convert a
         serialization bug into a permanent, invisible cache bypass — every
         request would look like a cold start and spend a token forever.
         """

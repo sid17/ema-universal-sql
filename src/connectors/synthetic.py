@@ -83,7 +83,7 @@ def _build(
     elif connector_type == "jira":
         built = _jira(tenant_id, rows, keyspace)
     else:
-        # LAW 4: an unknown connector is a wiring bug. Returning [] would look
+        # An unknown connector is a wiring bug. Returning [] would look
         # exactly like a tenant with no data and hide it.
         raise ValueError(
             f"no synthetic dataset for connector {connector_type!r}; expected 'github' or 'jira'"

@@ -1,9 +1,8 @@
 """Loading `config/connectors/*.yaml` into the global catalog.
 
-Split from `scripts/seed.py` at LAW 1's 400-line decompose threshold, and it is
-a natural seam: every other section of the seeder writes **per-tenant** rows
-(grants, secrets, policies, budgets), while this one writes the single global
-catalog every tenant shares (ADR-013).
+Split from `scripts/seed.py` along a natural seam: every other section of the
+seeder writes **per-tenant** rows (grants, secrets, policies, budgets), while
+this one writes the single global catalog every tenant shares.
 """
 
 from pathlib import Path
@@ -40,7 +39,7 @@ def load_yaml(path: Path) -> dict[str, Any]:
 
 
 def seed_connectors(conn) -> int:
-    """The global connector catalog — one YAML file per connector (ADR-013).
+    """The global connector catalog — one YAML file per connector.
 
     **One row per RESOURCE, not per file.** A connector file describes an API
     (`api:`) and the calls it serves (`resources:`), so onboarding another

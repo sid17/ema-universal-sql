@@ -6,13 +6,12 @@ makes either useful — so every request emits one JSON line carrying the same
 ``trace_id`` the envelope returned and the span recorded.
 
 This is the cheap half of the access trail. The durable half is the
-``audit_logs`` table (``001_init.sql``), which Phase 2 fills once there is a real
-query to audit — it needs ``sources_accessed`` and ``rows_returned``, which do
-not exist until execution does. Both join on ``trace_id``.
+``audit_logs`` table (``001_init.sql``), written after execution because it
+needs ``sources_accessed`` and ``rows_returned``. Both join on ``trace_id``.
 
 **What is deliberately not logged.** Never the token, and never a masked value: a
-mask enforced in the response but leaked to the log is not a mask. Phase 2 should
-also normalise ``query_text`` before auditing it — a predicate literal like
+mask enforced in the response but leaked to the log is not a mask.
+``query_text`` is normalised before auditing for the same reason — a literal like
 ``WHERE reporter_email = 'x@acme.com'`` puts in the log exactly the PII the CLS
 rule strips from the result.
 """

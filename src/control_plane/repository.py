@@ -1,24 +1,22 @@
 """The runtime read layer over the control plane, with an in-process TTL cache.
 
-HLD §3 describes the control plane as *"read at request time (cached)"*. The
-cache is what makes that true rather than aspirational: without it every query
-pays four or five Postgres round-trips before it touches a connector, and the
-Phase 4 P95 ends up measuring Postgres instead of Jira — which is precisely the
-thing the trace is supposed to disprove.
+The control plane is read at request time and cached. The cache is what makes
+that affordable: without it every query pays four or five Postgres round-trips
+before it touches a connector, and the measured P95 ends up describing Postgres
+instead of the slow source.
 
-Three later phases read through this class, so all five reads exist here even
-though Phase 0 only consumes :meth:`ControlPlaneRepository.get_tenant`:
+Six reads, and who consumes each:
 
-===================================  ======================================  =====
-Method                               Consumer                                Phase
-===================================  ======================================  =====
-``get_tenant``                       the tenant-status gate (``deps.py``)    P0
-``get_rate_limit_policy``            ``TokenBucketRateLimiter`` sizing       P1
-``get_tenant_connectors``            the ``CONNECTOR_NOT_ENABLED`` gate      P2
-``list_connectors``                  ``ConnectorRegistry`` catalog+adapters  P6
-``get_connector``                    one resource's endpoint + capabilities  P6
-``get_policies``                     ``EntitlementEngine``                   P2
-===================================  ======================================  =====
+===================================  ======================================
+Method                               Consumer
+===================================  ======================================
+``get_tenant``                       the tenant-status gate (``deps.py``)
+``get_rate_limit_policy``            ``TokenBucketRateLimiter`` sizing
+``get_tenant_connectors``            the ``CONNECTOR_NOT_ENABLED`` gate
+``list_connectors``                  ``ConnectorRegistry`` catalog+adapters
+``get_connector``                    one resource's endpoint + capabilities
+``get_policies``                     ``EntitlementEngine``
+===================================  ======================================
 
 The cache is per-process and deliberately unsynchronised across replicas: a
 policy change becomes visible within ``CONTROL_PLANE_TTL_MS`` everywhere, which
@@ -42,7 +40,7 @@ from src.config import get_settings
 class Tenant:
     """A tenant as the gate needs it.
 
-    Typed because Phase 0 has a real consumer reading ``status``. The other
+    Typed because there is a real consumer reading ``status``. The other
     reads return plain rows until the phase that consumes them shapes them.
     """
 
@@ -147,7 +145,7 @@ class ControlPlaneRepository:
     def get_tenant_connectors(self, tenant_id: str) -> list[dict[str, Any]]:
         """The connectors this tenant is granted, with their ``secret_ref``.
 
-        ADR-013: the grant lives on ``tenant_connector``; the connector's own
+        The grant lives on ``tenant_connector``; the connector's own
         definition lives on the global ``connectors`` catalog.
         """
 

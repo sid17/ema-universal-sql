@@ -1,4 +1,4 @@
-# Every entry point for this repo. `demo`, `e2e` and `load` are declared now as
+# Every entry point for this repo. `demo` and `load` are declared now as
 # stubs naming their phase — a target introduced late is a target forgotten.
 #
 # `python` is not on PATH in this environment; every Python command goes through
@@ -10,7 +10,7 @@ BASE_URL ?= http://localhost:8000
 HEALTH_URL ?= $(BASE_URL)/healthz
 HEALTH_TIMEOUT ?= 90
 
-.PHONY: up down seed test test-integration test-mode e2e load load-seed load-mt demo demo-detail trace scrape connectors artifacts fmt
+.PHONY: up down seed test test-integration test-mode load load-seed load-mt demo demo-detail trace scrape connectors artifacts fmt
 
 ## up: build and start the stack, then wait until /healthz actually answers.
 # Polled, not slept: the submission gate times cold-to-serving, so the wait has
@@ -55,8 +55,8 @@ test-integration: test-mode
 
 ## test-mode: recreate the app with TEST_MODE=1, enabling the /v1/test/* hooks.
 # `make demo` and the integration suite both need POST /v1/test/fail-next, which
-# 404s in a normal run. Phase 0 guarded those routes deliberately and this does
-# NOT reverse that: the default stays off, and turning it on is an explicit,
+# 404s in a normal run. Those routes are guarded deliberately and this does NOT
+# reverse that: the default stays off, and turning it on is an explicit,
 # visible step rather than a compose default nobody reads. Idempotent — compose
 # only recreates the container when the value actually changes.
 # `--build`, not just `up`: `src/` is COPYed into the image, so without it a
@@ -68,14 +68,10 @@ test-mode:
 
 ## trace: capture one live query and render the waterfall artifact.
 # Truncates the span log first, so the artifact provably describes the code that
-# is checked out rather than whatever accumulated across previous runs (ADR-045).
+# is checked out rather than whatever accumulated across previous runs.
 # The renderer runs inside the app container — no host Python needed.
 trace:
 	./scripts/trace.sh
-
-## e2e: Playwright browser specs. (Phase 3)
-e2e:
-	@echo "e2e: no-op — Playwright UI specs land in Phase 3."
 
 ## load: k6 at ~500 RPS for 60s, writing docs/artifacts/load/k6-summary.txt.
 # Runs k6 from its own container (the `load` compose profile), so a fresh clone
@@ -84,12 +80,12 @@ e2e:
 #
 # OTEL_EXPORTER=none for the duration of the run, then restored. Exporting ~500
 # spans/second to JSONL is measurement overhead on the very latency being
-# measured — a Phase 0 watch-out carried forward. The README says the number
-# excludes span export rather than letting it pretend otherwise. Restoring
+# measured. The README says the number excludes span export rather than letting
+# it pretend otherwise. Restoring
 # afterwards matters because `make trace` needs the file sink back.
 #
 # `-` on the k6 line: a FAILED THRESHOLD IS A RESULT, not a build error. The
-# summary must still be written and the app must still be restored (ADR-044).
+# summary must still be written and the app must still be restored.
 RATE ?= 500
 DURATION ?= 60s
 load:
@@ -182,9 +178,8 @@ artifacts: demo demo-detail trace connectors scrape
 	@find docs/artifacts -type f | sort
 
 ## demo: the scripted walkthrough, teed to docs/artifacts/demo/demo-output.txt.
-# Four calls covering four of the five hard parts with no UI and no observability
-# stack — the artifact insurance, so a slip in Phase 3 or 4 cannot leave the
-# submission with no demo at all.
+# Four calls covering four of the five hard parts, with no UI and no
+# observability stack — so it runs anywhere the stack runs.
 demo: test-mode
 	./scripts/demo.sh
 

@@ -1,8 +1,8 @@
 """Postgres connection pool and the migration runner.
 
 The pool is created once in the app lifespan (`src/main.py`) and hung on
-`app.state`, so every later phase's governance module borrows the same
-connections rather than opening its own.
+`app.state`, so the governance modules borrow the same connections rather than
+opening their own.
 
 `run_migrations()` is idempotent: applied filenames are recorded in a
 `schema_migrations` table and skipped on the next run, which is what makes

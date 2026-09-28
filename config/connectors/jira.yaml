@@ -14,7 +14,7 @@
 #      adapter could send.
 #
 # It is also the source carrying `assignee` (the RLS subject) and
-# `reporter_email` (the CLS-masked column), so Phase 2's entitlement work lands
+# `reporter_email` (the CLS-masked column), so the entitlement work lands
 # against this connector. See config/policies.yaml.
 
 connector_type: jira
@@ -69,7 +69,7 @@ resources:
           ops: ["="]
           option: {inject_into: jql, field: status}
 
-        # The RLS subject: Phase 2 compiles `assignee = :user` into the plan and
+        # The RLS subject: the engine compiles `assignee = :user` into the plan and
         # pushes it down through this capability, so forbidden rows are never
         # fetched rather than fetched-then-dropped.
         assignee:

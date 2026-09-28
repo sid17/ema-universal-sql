@@ -1,8 +1,7 @@
 """Step 0 of a fetch: reject anything the capability model does not declare.
 
-Extracted from :mod:`src.connectors.mock_adapter` when that file crossed LAW 1's
-400-line decompose threshold. **Validation moved, not the six-step
-orchestration**: the ordering comment on ``fetch()`` is that file's most valuable
+Extracted from :mod:`src.connectors.mock_adapter`. **Validation moved, not the
+six-step orchestration**: the ordering comment on ``fetch()`` is that file's most valuable
 documentation, and splitting the comment from the code it describes would cost
 more than the lines saved.
 
@@ -45,11 +44,10 @@ def validate_request(
     **Rejected, not silently ignored**, for predicates *and* projections.
 
     For a predicate, a silent drop would return rows the caller did not ask for
-    — and in Phase 2 that predicate may be the RLS filter, which turns a silent
-    drop from a bug into a data leak.
+    — and that predicate may be the RLS filter, which turns a silent drop from a
+    bug into a data leak.
 
-    For a projection the failure is quieter and just as bad. DoD §4
-    non-negotiable #2 requires the engine to fetch
+    For a projection the failure is quieter and just as bad. The engine fetches
     ``projection ∪ every WHERE/ORDER BY column`` so that re-applying predicates
     authoritatively cannot drop a valid row. If a column in that union were
     silently omitted here, the engine would re-filter on data it never fetched

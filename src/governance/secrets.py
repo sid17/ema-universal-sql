@@ -11,14 +11,14 @@ takes only a ``secret_ref``; it reads the owning ``tenant_id`` out of the
 be a confused-deputy seam — pass someone else's ``secret_ref`` with your own
 tenant and the class whose entire purpose is isolation would break it.
 
-**Crypto-shred** (HLD §2). Because the key is per-tenant and lives outside the
+**Crypto-shred.** Because the key is per-tenant and lives outside the
 ciphertext, offboarding is a *key destruction*, not a row scrub: delete one
 tenant's ``fernet_key`` and every secret it ever held becomes permanently
 unrecoverable, while every other tenant is untouched. That is a one-row write
 instead of a cascading delete across every table that ever saw the data.
 
 In production this class is backed by a KMS or Vault; ``Fernet`` + a column
-stands in for it (ADR-006). The *indirection* — a reference resolved at fetch
+stands in for it. The *indirection* — a reference resolved at fetch
 time against per-tenant key material — is the part that stays true.
 """
 
@@ -98,13 +98,7 @@ class SecretsManagerClient:
     def _auth_error(detail: str) -> ApiError:
         return ApiError(
             code=ErrorCode.CONNECTOR_AUTH_ERROR,
-            # 403, not 502 (ADR-029). HLD §4, design-doc §8.1 and the phase-2
-            # file all say 403, and HLD §9 makes the error vocabulary a
-            # provenance rail that must be identical across all three. Phase 1
-            # shipped 502; Phase 2 is the first phase to render this code over
-            # HTTP, so it is the phase that has to reconcile it.
-            #
-            # 403 is also the better answer on its merits: a revoked credential
+            # 403, not 502. A revoked credential
             # is not this server erring, it is this tenant's connector being
             # unusable, and the caller action is administrative ("reconnect
             # GitHub") rather than "retry later" — which is exactly what 403

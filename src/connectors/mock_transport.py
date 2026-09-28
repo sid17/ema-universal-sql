@@ -1,7 +1,7 @@
 """How the mock plays the source: build a call, answer it, parse it back.
 
-Split from :mod:`src.connectors.mock_adapter` at LAW 1's 400-line threshold, and
-the seam is a real one rather than a convenient cut. ``mock_adapter`` owns the
+Split from :mod:`src.connectors.mock_adapter` along a real seam rather than a
+convenient cut. ``mock_adapter`` owns the
 **order** a fetch happens in — cache, token, secret, call, record — which is a
 governance concern. This owns **what a call looks like**, which is a wire
 concern, and it is the half a live adapter replaces.
