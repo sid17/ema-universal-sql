@@ -1,8 +1,8 @@
 """FastAPI application factory.
 
 Owns wiring only — the routes live in ``src/gateway/routes.py``. The clients
-opened here are hung on ``app.state`` so that Phase 1's governance modules (token
-bucket, freshness cache, secrets) borrow *these* connections rather than opening
+opened here are hung on ``app.state`` so the governance modules (token bucket,
+freshness cache, secrets) borrow *these* connections rather than opening
 their own; a second pool would double the connection count and make the
 control-plane cache's query-count guarantee meaningless.
 
@@ -163,11 +163,11 @@ def create_app() -> FastAPI:
     app.include_router(router)
 
     # Order matters only in that both must happen before the first request.
-    # ADR-015: collectors only — the /metrics route belongs to routes.py.
+    # Collectors only — the /metrics route belongs to routes.py.
     instrument_app(app)
     # Exclude the polled ops routes from tracing, for the same reason the access
     # log skips them: compose healthchecks every few seconds would otherwise make
-    # Phase 4's waterfall artifact almost entirely /healthz spans.
+    # the trace waterfall artifact almost entirely /healthz spans.
     #
     # `tracer_provider=` is not optional-but-tidy, it is load-bearing. Without
     # it the instrumentor resolves the OTel GLOBAL provider, which can only be

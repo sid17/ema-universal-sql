@@ -54,7 +54,7 @@ def install_error_handlers(app: FastAPI) -> None:
 
     One per exception type, and the set is closed: anything else reaching here
     is a bug and must surface as a 500 with a traceback in the log, not be
-    quietly rendered as a tidy error body (LAW 4).
+    quietly rendered as a tidy error body.
     """
     app.add_exception_handler(ApiError, _handle_api_error)
     app.add_exception_handler(UnauthenticatedError, _handle_unauthenticated)

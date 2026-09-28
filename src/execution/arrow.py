@@ -9,13 +9,13 @@ look incidental:
     InvalidInputException: Provided table/dataframe must have at least one column
 
 ``from_pylist`` infers its schema *from the rows*, so an empty result infers
-nothing and DuckDB refuses to register it. Every zero-row path in Phase 2 reaches
+nothing and DuckDB refuses to register it. Every zero-row path reaches
 this — a denied resource, an RLS binding that matches nothing, a timed-out source
 contributing no rows to a partial answer. carol, the ``empty`` leg of the
 trichotomy, is one join away from it.
 
 So the schema is **always** built explicitly from the capability model's declared
-column types (ADR-030), never inferred — not only when the rows happen to be
+column types, never inferred — not only when the rows happen to be
 empty. Inference-when-non-empty would be worse than either consistent choice: the
 same source would register as ``int64`` on a request that returned data and
 ``string`` on one that did not, and DuckDB would see a source whose schema
@@ -33,7 +33,7 @@ import pyarrow as pa
 #:
 #: Deliberately small. The mock sources have exactly two shapes (text and
 #: GitHub's integer ``number``), and a type system richer than the data is a
-#: speculative abstraction (LAW 5). An undeclared type falls back to string,
+#: speculative abstraction. An undeclared type falls back to string,
 #: which is the capability model's own default.
 ARROW_TYPES: Mapping[str, pa.DataType] = {
     "string": pa.string(),
@@ -44,7 +44,7 @@ ARROW_TYPES: Mapping[str, pa.DataType] = {
 }
 
 #: DuckDB result type -> the name that goes into ``ColumnMeta.type``.
-#: The envelope speaks a small, stable vocabulary (HLD §4 shows ``"string"``),
+#: The envelope speaks a small, stable vocabulary,
 #: not DuckDB's internal spelling.
 ENVELOPE_TYPES: Mapping[str, str] = {
     "VARCHAR": "string",
@@ -77,7 +77,7 @@ def build_table(
     """A table with exactly ``columns``, typed from ``types``, however few rows.
 
     Every row is rebuilt against ``columns`` rather than passed through, so a
-    source that omitted a column (Phase 1's projection drops keys a row does not
+    source that omitted a column (projection drops keys a row does not
     carry) contributes ``None`` instead of a ragged record that Arrow would
     reject — or worse, quietly widen.
     """

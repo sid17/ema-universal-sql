@@ -4,7 +4,7 @@ A whitelist rather than a blacklist of dangerous strings, because string
 matching on SQL is exactly the reasoning this design replaced with an AST:
 ``SELECT/**/‌*`` and ``sElEcT *`` defeat a regex and are identical trees.
 
-**This runs BEFORE ``qualify()``, and that ordering is load-bearing** (ADR-027).
+**This runs BEFORE ``qualify()``, and that ordering is load-bearing.**
 Measured: ``qualify()`` *expands* ``SELECT *`` against the schema, so by the time
 a post-qualify validator walks the tree there is no :class:`~sqlglot.exp.Star`
 left to find and the one projection that defeats projection pushdown would be
@@ -16,10 +16,10 @@ arbitrary functions would reject — so the engine's nodes are trusted and never
 re-validated. Without that note a reviewer reads the CLS injection as violating
 this rule.
 
-The allowed set below is **measured, not guessed** (v3-research Finding 4): the
-canonical query, once qualified, contains ``Identifier``, ``TableAlias`` and
-``Ordered``, none of which appeared in the phase file's original sketch. A
-whitelist missing them rejects the canonical query itself.
+The allowed set below is **measured, not guessed**: the canonical query, once
+qualified, contains ``Identifier``, ``TableAlias`` and ``Ordered``, which are
+easy to omit when writing the list by hand. A whitelist missing them rejects the
+canonical query itself.
 """
 
 from __future__ import annotations
@@ -53,9 +53,9 @@ _STRUCTURE = (
 #: Every one of these is either pushable by at least one connector (``=`` on
 #: both; ``>``, ``>=``, ``<``, ``<=`` on Jira's ``updated``) or re-appliable by
 #: the engine as a residual filter. ``IN``, ``LIKE`` and ``NOT`` are absent
-#: because no capability model declares them and nothing in the brief asks for
-#: them — adding an operator no source can filter on is a feature with no user
-#: (LAW 5). Residual support would make them *work*, which is precisely why
+#: because no capability model declares them — adding an operator no source can
+#: filter on is a feature with no user.
+#: Residual support would make them *work*, which is precisely why
 #: they would be easy to add later and are not needed now.
 _OPERATORS = (
     exp.EQ,
@@ -112,7 +112,7 @@ def reject_unsupported(tree: exp.Expression) -> None:
     First, not all: a query with six problems still has to be fixed one at a
     time, and reporting six reasons makes the first one harder to find.
 
-    LAW 4 — this never returns a boolean a caller could forget to check.
+    This never returns a boolean a caller could forget to check.
     """
     for node in tree.walk():
         if type(node) not in ALLOWED_NODES:

@@ -1,6 +1,6 @@
 """Stage 2 — SQL text in, an attributed and validated AST out.
 
-Four steps, and their order is the subject of ADR-027:
+Four steps, and the order is load-bearing:
 
 1. **parse** — ``parse_one(sql, read="duckdb", into=exp.Select)``. The ``into=``
    form raises ``ParseError`` on ``INSERT`` / ``UPDATE`` / ``DELETE`` / ``DROP``
@@ -15,9 +15,9 @@ Four steps, and their order is the subject of ADR-027:
    tenant has been granted, and then the pieces the later stages need are pulled
    out of the tree.
 
-**The gate in step 4 is the only thing standing there.** Measured (v3-research
-Finding 2): ``qualify()`` raises on an unknown *column* but silently accepts an
-unknown *table* — ``SELECT s.a FROM slack.msgs s`` passes the optimizer
+**The gate in step 4 is the only thing standing there.** Measured:
+``qualify()`` raises on an unknown *column* but silently accepts an unknown
+*table* — ``SELECT s.a FROM slack.msgs s`` passes the optimizer
 untouched. Without this gate that query reaches the planner and fails with a
 message about missing capabilities rather than "you have not connected Slack".
 """
@@ -183,7 +183,7 @@ class SQLParser:
                 f"Unknown column or table: {exc}", detail="UnknownColumn"
             ) from exc
         except SqlglotError as exc:
-            # LAW 4: any other sqlglot failure is still the caller's query being
+            # Any other sqlglot failure is still the caller's query being
             # unsupported, not a server fault — but it must not masquerade as
             # the unknown-column case above.
             raise InvalidQueryError(
@@ -321,7 +321,7 @@ class SQLParser:
         try:
             return int(limit.expression.this)
         except (AttributeError, TypeError, ValueError) as exc:
-            # LAW 4: a LIMIT we cannot read is not a LIMIT we may ignore —
+            # A LIMIT we cannot read is not a LIMIT we may ignore —
             # ignoring it would silently return the whole result set.
             raise InvalidQueryError(
                 "LIMIT must be a plain integer literal.", detail="Limit"
@@ -331,8 +331,8 @@ class SQLParser:
 def flatten_conjunction(node: exp.Expression):
     """Yield the leaf conjuncts of an AND tree.
 
-    **A single ``where.this.flatten()`` is NOT enough** — the Phase 0 spike's
-    headline finding. ``tree.where(pred, append=True)`` routes through
+    **A single ``where.this.flatten()`` is NOT enough.**
+    ``tree.where(pred, append=True)`` routes through
     ``exp.and_``, which wraps the *existing* WHERE in an ``exp.Paren`` before
     AND-ing. ``flatten()`` prunes at the paren and yields the whole nested AND as
     one leaf, so after stage 3 injects RLS the caller's original predicates never

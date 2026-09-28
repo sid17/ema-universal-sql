@@ -83,7 +83,7 @@ class SourceCatalog:
 
         The prototype's connectors serve exactly one resource each, which is why
         this is unambiguous. A connector with two resources would need the
-        resource name here — noted rather than built (LAW 5).
+        resource name here — noted rather than built.
         """
         for source in self._sources.values():
             if source.connector_type == connector_type:

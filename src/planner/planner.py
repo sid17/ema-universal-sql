@@ -80,7 +80,7 @@ class SourcePlan:
     The entitled tree already carries an unsatisfiable predicate for this
     resource, so the *result* would be empty either way. But a constant has no
     owning table, so it cannot be pushed — and the source would be fetched in
-    full and then discarded, which is the post-filtering non-negotiable #1
+    full and then discarded, which is the post-filtering this design
     forbids. Skipping the fetch is what makes "forbidden rows are never
     requested" true for the default-deny case as well as the RLS case.
     """
@@ -114,7 +114,7 @@ class QueryPlanner:
     #: How many rows to ask a source for. The prototype's datasets are tens of
     #: rows, so one page is always the whole set; a live adapter would loop on
     #: ``AdapterResponse.next_cursor`` until it had enough. Noted, not built —
-    #: connector-level paging beyond one page is a COULD (DoD §3).
+    #: connector-level paging beyond one page is not built.
     DEFAULT_SOURCE_LIMIT = 100
 
     def plan(self, entitled: EntitledPlan) -> QueryPlan:
@@ -277,7 +277,7 @@ class QueryPlanner:
         declared = set(source.capabilities.columns)
         return tuple(sorted(needed & declared))
 
-    # -- total ordering (HLD §9) ------------------------------------------
+    # -- total ordering ---------------------------------------------------
 
     @staticmethod
     def _ensure_total_order(
@@ -287,11 +287,11 @@ class QueryPlanner:
     ) -> None:
         """Append a tiebreaker so the result order is **total**.
 
-        HLD §9 fixes the result ordering at ``issue.updated DESC, issue.key ASC``
-        and the second term is not cosmetic: the result cursor is an offset, and
+        The result ordering is ``issue.updated DESC, issue.key ASC`` and the
+        second term is not cosmetic: the result cursor is an offset, and
         an offset over a non-total order lets tied rows reorder between pages, so
         rows are skipped or duplicated. Two of alice's three issues share an
-        ``updated`` value precisely so this is exercised (ADR-035).
+        ``updated`` value precisely so this is exercised.
 
         The tiebreaker is a **join key**, because a join key is the closest thing
         to a primary key the catalog knows about. With no ORDER BY at all the

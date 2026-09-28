@@ -1,12 +1,11 @@
 """Stage 5a — call the sources in parallel, then join what came back in DuckDB.
 
-*Knows DuckDB. Knows nothing about the envelope* (ADR-034).
+*Knows DuckDB. Knows nothing about the envelope.*
 
-**The deadline is enforced here, and it had to be.** Phase 0 set
-``request.state.deadline_ms`` in ``routes.py`` and nothing ever read it — carried
-forward as an explicit watch-out. Without enforcement, "timeouts degrade to
-partial results" (brief line 84) would be demonstrated only by a forced-failure
-hook we trigger ourselves, while a genuinely slow source hung the request.
+**The deadline is enforced here, and it had to be.** Without enforcement,
+"timeouts degrade to partial results" would be demonstrable only through the
+forced-failure hook we trigger ourselves, while a genuinely slow source hung the
+request.
 
 **``return_exceptions=True`` is load-bearing, not defensive style.**
 ``asyncio.gather``'s default propagates the first exception *and cancels its
@@ -16,7 +15,7 @@ one. That is the trichotomy collapsing, which is the one thing
 `02-DEFINITION-OF-DONE.md` §4 says may not happen.
 
 **Which failures degrade, and which stop the query.** Not a new rule: it is read
-straight off design-doc §8.1, which gives exactly two codes a ``200`` form —
+from the published error table, which gives exactly two codes a ``200`` form —
 ``STALE_DATA`` (a warning) and ``SOURCE_TIMEOUT`` (partial). The other four are
 ``4xx`` hard stops with no partial answer to offer (§4.5). Note this deliberately
 differs from :attr:`~src.connectors.errors.Classification.degradable` for a
@@ -49,7 +48,7 @@ logger = logging.getLogger(__name__)
 #: How a source's fetch ended. Mirrors ``SourceOutcome.state`` in the envelope.
 SourceState = Literal["ok", "timeout", "error", "throttled"]
 
-#: One span per source, named for the connector (ADR-037). Opened **inside** the
+#: One span per source, named for the connector. Opened **inside** the
 #: ``asyncio.gather`` closure so OTel context parents it to ``federation`` and
 #: the two siblings carry genuinely overlapping start/end times — that overlap
 #: is the trace's evidence that the federation is parallel, and a span
@@ -62,7 +61,7 @@ SOURCE_STATE_ATTRIBUTE = "source.state"
 
 #: The only failure a query may survive as a partial result.
 #:
-#: Derived from design-doc §8.1: it is the one error code the table gives a
+#: It is the one error code the published table gives a
 #: ``200 (partial)`` form. Everything else is a hard stop there and is a hard
 #: stop here.
 DEGRADABLE_CODES = frozenset({ErrorCode.SOURCE_TIMEOUT})
@@ -81,8 +80,8 @@ DEFAULT_SOURCE_LIMIT = 100
 #: A table rather than a chain of conditionals, so the value is a
 #: :data:`SourceState` by construction. The version this replaced built a plain
 #: ``str`` and needed a ``type: ignore`` to assign it — silencing the checker on
-#: exactly the field whose whole job is to be one of four known words (LAW 7:
-#: fix the code, never weaken the config).
+#: exactly the field whose whole job is to be one of four known words. Fix the
+#: code rather than weakening the checker.
 SOURCE_STATE_FOR_CODE: Mapping[ErrorCode, SourceState] = {
     ErrorCode.SOURCE_TIMEOUT: "timeout",
     ErrorCode.RATE_LIMIT_EXHAUSTED: "throttled",
@@ -166,11 +165,9 @@ class FederationEngine:
         fetches = await self._fetch_all(plan, tenant_id, max_staleness_ms, source_limit)
         self._raise_on_hard_failure(fetches)
         # OFF THE EVENT LOOP, and this is a measured decision rather than a
-        # precaution. Phase 4's load run found the join to be 10.3ms of pure
-        # synchronous CPU per request against 0.25ms for the audit INSERT and
-        # 0.24ms for the parse — ~95% of everything that blocks the loop. Run
-        # inline it serializes every concurrent request behind one core and caps
-        # a worker at ~1000/10.3 ≈ 97 RPS in theory, 48 RPS measured.
+        # precaution. The join is the dominant piece of synchronous CPU in a
+        # request — far more than the audit INSERT or the parse. Run inline it
+        # serializes every concurrent request behind one core.
         #
         # `to_thread` rather than a process pool because DuckDB releases the GIL
         # for query execution, and because the Arrow tables would otherwise have
@@ -202,7 +199,7 @@ class FederationEngine:
             if source_plan.yields_nothing:
                 # Default-denied: never call the adapter. The rows this caller
                 # is not entitled to are not fetched-and-dropped, they are not
-                # requested (non-negotiable #1). `state="ok"` because nothing
+                # requested. `state="ok"` because nothing
                 # went wrong — an empty answer is the correct answer, and
                 # marking it `error` would make default-deny look like an outage
                 # and set `partial`.
@@ -246,7 +243,7 @@ class FederationEngine:
                         response=response,
                     )
                 # The SAME `elapsed_ms` the envelope reports and the histogram
-                # records — one `perf_counter` pair, three views (ADR-037). A
+                # records — one `perf_counter` pair, three views. A
                 # second timer here would be a number that could disagree with
                 # the response, which is the one thing a trace must never do.
                 span.set_attribute(ELAPSED_MS_ATTRIBUTE, fetch.elapsed_ms)
@@ -265,7 +262,7 @@ class FederationEngine:
             if isinstance(result, SourceFetch):
                 fetches.append(result)
                 continue
-            # LAW 4: an unexpected exception is our bug. It is logged in full
+            # An unexpected exception is our bug. It is logged in full
             # and turned into an explicit `error` outcome — never swallowed, and
             # never quietly reported as a timeout, which would tell a caller to
             # retry something that will fail identically.

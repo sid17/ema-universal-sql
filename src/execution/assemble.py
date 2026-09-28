@@ -1,8 +1,8 @@
 """Stage 5b — everything the caller needs to know how much to trust the answer.
 
-*Knows the contract. Knows nothing about DuckDB* (ADR-034).
+*Knows the contract. Knows nothing about DuckDB.*
 
-The envelope is a first-class deliverable, not decoration (HLD §4): a federated
+The envelope is a first-class deliverable, not decoration: a federated
 answer assembled from sources with different freshness, different budgets and
 different failure modes is only usable if the caller can see which of those
 applied. So this module's whole job is **honesty**:
@@ -18,7 +18,7 @@ applied. So this module's whole job is **honesty**:
   contributed, making the omission invisible exactly when it matters most.
   ``QueryEnvelope`` enforces this structurally, so this module cannot forget it.
 
-**Empty, partial and error stay three distinct shapes** (non-negotiable #3).
+**Empty, partial and error stay three distinct shapes.**
 Empty is a *correct* answer, partial is a *degraded* one, error is *no* answer —
 and a caller must be able to tell them apart without reading prose.
 """
@@ -101,7 +101,7 @@ class ResultAssembler:
     ) -> None:
         self._limiter = limiter
         self._control_plane = control_plane
-        # The SAME injected clock the bucket and the cache take (ADR-019).
+        # The SAME injected clock the bucket and the cache take.
         # Reading `time.time()` here instead would make `freshness_ms` the one
         # value in the system that cannot be controlled in a test — and since
         # `fetched_at` comes from the cache, which IS on the injected clock, the
@@ -192,7 +192,7 @@ class ResultAssembler:
     # -- freshness ---------------------------------------------------------
 
     def _freshness_ms(self, fetches: tuple[SourceFetch, ...]) -> int | None:
-        """``now - min(fetched_at)`` — the **stalest** contributor (HLD §9).
+        """``now - min(fetched_at)`` — the **stalest** contributor.
 
         ``None`` when nothing was fetched at all, which is honest: there is no
         data whose age could be reported. Zero would claim perfect freshness for
@@ -201,7 +201,7 @@ class ResultAssembler:
         stamps = [f.response.fetched_at for f in fetches if f.response is not None]
         if not stamps:
             return None
-        # `fetched_at` is epoch SECONDS (the unit HLD §4 fixes for the envelope);
+        # `fetched_at` is epoch SECONDS (the unit the envelope fixes);
         # the clock is milliseconds. The conversion is here, in one place.
         return max(0, self._now_ms() - int(min(stamps) * 1000))
 
@@ -253,7 +253,7 @@ class ResultAssembler:
                 }
             )
 
-        # STALE_DATA rides back on a 200 (design-doc §8.1): the answer is usable
+        # STALE_DATA rides back on a 200: the answer is usable
         # but caveated, and failing the whole query would throw away good rows.
         if (
             freshness_ms is not None
@@ -296,9 +296,9 @@ class ResultAssembler:
                 tenant_id, fetch.connector_type, RateLimitPolicy.from_row(row)
             )
             # The gauge and the envelope get the SAME value from the SAME read
-            # (ADR-043). Published here rather than inside the limiter because
+            # Published here rather than inside the limiter because
             # the limiter deliberately takes no tenant-scoped reporting duty
-            # (ADR-020) and is skipped entirely on a cache hit — which would
+            # and is skipped entirely on a cache hit — which would
             # leave `/metrics` asserting a budget that had since moved.
             set_rate_limit_remaining(tenant_id, fetch.connector_type, remaining)
             budgets[fetch.connector_type] = ConnectorBudget(
@@ -315,8 +315,8 @@ class ResultAssembler:
 
         ``connector_ms`` carries only sources that made a **live** call. A cache
         hit costing 0.4ms would otherwise appear as connector time and make the
-        Phase 4 trace claim the source was fast when it was never called — the
-        HLD's own envelope example shows Jira omitted for exactly this reason.
+        trace claim the source was fast when it was never called. A source that
+        was not consulted is omitted from the envelope, not reported as instant.
         """
         stats: dict[str, Any] = dict(stage_ms or {})
         connector_ms = {

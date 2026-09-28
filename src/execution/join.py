@@ -1,15 +1,14 @@
 """Stage 5a, second half — register the fetched rows and run the entitled SQL.
 
-Split out of :mod:`src.execution.federation` when that module crossed LAW 1's
-400-line decompose threshold. The seam is a real one rather than a line-count
-convenience: *fetching* is about connectors, deadlines and partial failure;
-*joining* is about Arrow schemas and DuckDB. They share only the
+Split out of :mod:`src.execution.federation` along a real seam rather than a
+line-count convenience: *fetching* is about connectors, deadlines and partial
+failure; *joining* is about Arrow schemas and DuckDB. They share only the
 :class:`~src.execution.federation.SourceFetch` records that pass between them.
 
 **The SQL executed is the whole entitled tree** — every predicate, including the
 ones a source already applied. Re-applying them is free and is what makes
-pushdown an optimization rather than a correctness dependency (non-negotiable
-#2). Nothing in this module may filter rows on its own authority.
+pushdown an optimization rather than a correctness dependency. Nothing in this
+module may filter rows on its own authority.
 """
 
 from __future__ import annotations
@@ -29,7 +28,7 @@ if TYPE_CHECKING:  # pragma: no cover - import cycle guard, types only
 
 #: The DuckDB execution, spanned separately so the waterfall can distinguish
 #: "the sources were slow" from "the join was slow" — the distinction the
-#: phase's own "Done when" sentence turns on (ADR-037).
+#: headline reading turns on.
 JOIN_SPAN = "duckdb_join"
 
 
@@ -49,8 +48,7 @@ def join_sources(
 
     Wrapped in the ``duckdb_join`` span so a reader of the waterfall can tell
     "the sources were slow" from "the join was slow" — without it both live
-    inside one opaque ``federation`` bar and the phase's headline reading is
-    unavailable.
+    inside one opaque ``federation`` bar.
     """
     with get_tracer().start_as_current_span(JOIN_SPAN) as span:
         started = time.perf_counter()

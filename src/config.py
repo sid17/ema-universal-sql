@@ -25,9 +25,9 @@ class Settings(BaseSettings):
     REQUEST_TIMEOUT_MS: int = 5000
     CONTROL_PLANE_TTL_MS: int = 30000
     # 300s, comfortably longer than any max_staleness_ms the demo uses.
-    # TTL is a property of the WRITE, staleness a property of the READ
-    # (ADR-023): at 60s this and the demo's staleness knob were the same
-    # number, so a cache hit depended on which boundary fell first.
+    # TTL is a property of the WRITE, staleness a property of the READ. At 60s
+    # this and the demo's staleness knob were the same number, so a cache hit
+    # depended on which boundary fell first.
     CACHE_TTL_MS: int = 300000
     TEST_MODE: bool = False
 
@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     DEFAULT_SCOPES: str = "query:execute"
 
     # How much of each mock adapter's `simulated_latency_ms` to actually sleep.
-    # DEFAULT 0.0 — OFF (ADR-038). The unit suite runs on the commit hook and
+    # DEFAULT 0.0 — OFF. The unit suite runs on the commit hook and
     # must stay instant, and a sleep there would buy nothing: what the tests
     # assert is that the delay lands on the live path and not on a cache hit,
     # which a scale of 1.0 passed explicitly to one adapter proves just as well.
@@ -65,8 +65,8 @@ class Settings(BaseSettings):
     #: exceeds this fails loudly rather than writing tenant rows to disk.
     DUCKDB_MEMORY_LIMIT: str = "256MB"
 
-    # Tracing sink. ADR-016 keeps this backend-free; "file" writes JSONL that
-    # Phase 4 renders the waterfall from. "console" is for local debugging and
+    # Tracing sink, deliberately backend-free: "file" writes the JSONL the
+    # waterfall renders from. "console" is for local debugging and
     # "none" is for the k6 run, where exporting is measurement overhead.
     OTEL_EXPORTER: Literal["file", "console", "none"] = "file"
     OTEL_TRACE_FILE: str = "traces/spans.jsonl"

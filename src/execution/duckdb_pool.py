@@ -1,6 +1,6 @@
 """One DuckDB instance per tenant, reused across requests.
 
-**The measurement this module exists for.** Phase 4's load run found
+**The measurement this module exists for.** A load run found
 ``duckdb.connect(":memory:")`` costs **6.5ms** and the full register + execute +
 read-back cycle **8.3ms** — so creating the instance was ~78% of the join stage
 and roughly half of a cache-hit request. A cursor off a live instance costs
@@ -23,7 +23,7 @@ available disk space'``, so an in-memory database spills tenant rows to disk in
 the clear under memory pressure. Our datasets have never triggered it, but it is
 a live path in running code rather than a hypothetical. ``temp_directory=''``
 disables spilling outright, so a join too large for ``memory_limit`` fails
-**loudly** instead of silently leaking (LAW 4).
+**loudly** instead of silently leaking.
 """
 
 from __future__ import annotations
@@ -123,7 +123,7 @@ class DuckDBPool:
             tenant_id, connection = self._instances.popitem(last=False)
             self.evictions += 1
             logger.info("duckdb_pool: evicting instance for tenant %s", tenant_id)
-            # LAW 4: a close that fails is logged with its traceback. It is not
+            # A close that fails is logged with its traceback. It is not
             # re-raised, because the eviction is a side effect of another
             # tenant's request and failing that request for it would be wrong —
             # but it must never pass silently.

@@ -1,13 +1,13 @@
 """The JSONB predicate AST, compiled into a sqlglot node.
 
-**A policy is an AST, never a SQL string** (ADR-008). The difference is not
+**A policy is an AST, never a SQL string.** The difference is not
 stylistic. A policy stored as ``"assignee = '" + user + "'"`` can only be applied
 by concatenating it into a query — which is an injection surface, is impossible
 to analyse (you cannot ask a string *"which source does this filter?"*), and
 cannot be pushed down. An AST can be compiled into the plan, attributed to a
 source, pushed down, and re-applied authoritatively by the engine.
 
-The shape, as ``config/policies.yaml`` writes it and design-doc §8.2 publishes it::
+The shape, as ``config/policies.yaml`` writes it::
 
     {"op": "eq", "col": "assignee", "value": ":user"}
     {"op": "and", "args": [ {...}, {...} ]}
@@ -29,7 +29,7 @@ from sqlglot import exp
 #: Exactly the operators at least one connector declares in its capability model
 #: (``=`` on both sources; the range operators on Jira's ``updated``). An
 #: operator no source can filter on would compile to a predicate that is always
-#: residual — legal, but a feature with no user, so it is not here (LAW 5).
+#: residual — legal, but a feature with no user, so it is not here.
 COMPARISONS: Mapping[str, type[exp.Binary]] = {
     "eq": exp.EQ,
     "ne": exp.NEQ,
@@ -44,7 +44,7 @@ CONNECTORS: Mapping[str, str] = {"and": "and_", "or": "or_"}
 
 #: The one parameter the prototype binds. Set-valued rules (*"issues in your
 #: team's projects"*) would resolve against a small ``entitlement_scope`` table;
-#: the design covers that and the prototype does not build it (HLD §7).
+#: the design covers that and the prototype does not build it.
 USER_PARAM = ":user"
 
 

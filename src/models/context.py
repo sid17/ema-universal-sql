@@ -5,8 +5,7 @@ mock token is shaped like something a real IdP would issue and swapping one in
 later changes how a token is *obtained*, not what the pipeline does with it.
 
 RFC 9068 gives authorization two separate vocabularies, and this prototype uses
-both for different jobs — the take-home asks for exactly this split
-(*"user token → scopes/roles → RLS/CLS"*, line 157):
+both for different jobs — token → scopes/roles → RLS/CLS:
 
 ``scopes``
     From the ``scope`` claim (RFC 9068 §2.2.3 → RFC 8693 §4.2). **Coarse API
@@ -19,10 +18,10 @@ both for different jobs — the take-home asks for exactly this split
     ``policies.applies_to`` — and so shape the RLS predicate and CLS mask that
     get compiled into the plan.
 
-Do not confuse either with the design doc's ``entitlement_scope`` (§4.3), which
-is a *data* scope used as a cache-key segment and to resolve set-valued RLS
-params. That one lands in Phase 2, and conflating it with the OAuth ``scope``
-above would be a data-leak vector — see the "entitlement trap" in design-doc §4.3.
+Do not confuse either with ``entitlement_scope``, which is a *data* scope used as
+a cache-key segment and to resolve set-valued RLS params. Conflating it with the
+OAuth ``scope`` above would be a data-leak vector: one decides whether you may
+call the API, the other decides which rows you may see.
 """
 
 from collections.abc import Mapping

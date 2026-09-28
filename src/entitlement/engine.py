@@ -1,9 +1,9 @@
 """Stage 3 — the crux: entitlement compiled into the plan.
 
-This is the module the design document rests on. `02-DEFINITION-OF-DONE.md` §4
-non-negotiable #1: *"Entitlement is compiled into the plan and pushed down —
-never post-filtered. The moment we fetch rows we aren't entitled to and drop them
-in Python, the central claim of the design doc is false."*
+The rule this module exists to enforce: **entitlement is compiled into the plan
+and pushed down, never post-filtered.** The moment rows we are not entitled to
+are fetched and dropped in Python, the central safety claim of the system is
+false.
 
 So there is no filtering here. There is only **rewriting**:
 
@@ -14,10 +14,10 @@ So there is no filtering here. There is only **rewriting**:
 - **CLS** replaces a projection node in place — ``MD5(issue.reporter_email) AS
   reporter_email``. The mask is expressed exactly once, in the AST, and stage 5
   merely *executes* it. Because that execution is the final ``SELECT``, it is
-  post-join by construction, which satisfies the join-key masking rule
-  (design-doc §3.2) with no second code path.
+  post-join by construction, which satisfies join-key masking with no second
+  code path.
 
-**Two refusals, and they are different on purpose** (ADR-031, HLD §9):
+**Two refusals, and they are different on purpose:**
 
 ===============================  ==========================================
 An explicit ``effect='deny'``    ``403 ENTITLEMENT_DENIED``. The caller asked
@@ -76,7 +76,7 @@ def applies_to(policy: Mapping[str, Any], roles: Iterable[str]) -> bool:
     return target == ANY_ROLE or target in set(roles)
 
 
-#: ``mask`` enum (HLD §9). ``hash`` is the canonical choice: the column still
+#: ``mask`` enum. ``hash`` is the canonical choice: the column still
 #: appears with a stable value, so a caller can group by it without ever
 #: learning the address — which ``drop`` cannot offer and ``null`` destroys.
 MASK_KINDS = ("null", "hash", "redact", "drop")
@@ -100,14 +100,14 @@ class EntitledPlan:
     """Resources that must **yield nothing**, by qualified name.
 
     This is the **default-deny** set — a governed resource with no matching
-    allow — which is what the phase file's ``# yield empty for these`` comment
+    allow — which is what a naive ``# yield empty for these`` shortcut
     always meant. An *explicit* ``deny`` never reaches this field: it raises 403
     from :meth:`EntitlementEngine.compile`, so no plan is produced at all.
 
     The planner turns each entry into a source it does not fetch. That matters:
     an unsatisfiable predicate alone would make the *result* empty while still
     pulling every row out of the source first — which is the post-filtering
-    non-negotiable #1 exists to forbid.
+    the compile-into-the-plan rule exists to forbid.
     """
 
     empty_aliases: frozenset[str] = frozenset()
@@ -117,7 +117,7 @@ class EntitledPlan:
     """Columns a ``drop`` mask removed — they must not be fetched either."""
 
     entitlement_scope: str = ""
-    """The resolved RLS binding, and a **mandatory** cache-key segment (ADR-025).
+    """The resolved RLS binding, and a **mandatory** cache-key segment.
 
     For the canonical ``assignee = :user`` rule this is the ``user_id``, so the
     connector cache is per-user and alice's rows can never be served to bob.
@@ -274,7 +274,7 @@ class EntitlementEngine:
         query pulled all 9 Jira rows and returned 0. The caller saw nothing, but
         the rows still crossed the source boundary — the source's own audit log
         records a read that should never have happened, and the rows sit in this
-        process's memory. That is precisely the post-filtering non-negotiable #1
+        process's memory. That is precisely the post-filtering this design
         forbids.
 
         So the aliases are returned as well, and the planner marks those sources

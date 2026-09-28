@@ -1,7 +1,7 @@
 """Mock identity: mint a JWT, and turn a Bearer header back into a UserContext.
 
 The prototype stands in a **mock HS256 token** for a real per-tenant OIDC
-provider (HLD §2). The claim *shape* is the part that matters and is deliberately
+provider. The claim *shape* is the part that matters and is deliberately
 OIDC-compatible — ``sub``, ``aud``, ``exp`` plus the two custom claims the
 entitlement engine reads — so swapping in a real IdP later changes how the token
 is obtained and verified, not what the pipeline does with it.

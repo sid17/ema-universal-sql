@@ -1,14 +1,7 @@
 """The HTTP surface.
 
-Phase 0 wired every route the prototype will ever expose and had ``/v1/query``
-return an **envelope shell**; Phase 2 filled it in. The point of doing it that
-way round is that the response contract existed and was already in use before
-anything produced it, so no later phase got to invent its own shape — and the
-diff that made the query real touches one function.
-
-Routes live here rather than in ``main.py`` because handlers are capped at 80
-lines and Phases 2, 3 and 4 each rewire one of them; ``main.py`` stays the app
-factory. This matches HLD §8's ``src/gateway/`` intent.
+Routes live here rather than in ``main.py`` so handlers stay small and
+``main.py`` stays the app factory.
 """
 
 from __future__ import annotations
@@ -67,10 +60,10 @@ class FailNextRequest(BaseModel):
 def _require_test_mode() -> None:
     """404 unless ``TEST_MODE`` is on, so the route does not exist in a normal run.
 
-    Plain 404, NOT ``ErrorCode.ENTITLEMENT_DENIED``: HLD §9 reserves that code
-    for an explicit policy deny, and labelling a "route disabled" 404 with it
-    would pollute the six-code vocabulary the design doc shares. 404 rather than
-    403 for the same reason a disabled route should not advertise itself.
+    Plain 404, NOT ``ErrorCode.ENTITLEMENT_DENIED``: that code means an explicit
+    policy deny, and labelling a "route disabled" 404 with it would give a
+    security code two unrelated meanings. 404 rather than 403 for the same
+    reason a disabled route should not advertise itself.
     """
     if not get_settings().TEST_MODE:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not Found")
@@ -92,7 +85,7 @@ def healthz(request: Request) -> dict[str, str]:
         with pool.connection() as conn:
             conn.execute("SELECT 1")
     except Exception:
-        # LAW 4: logged in full with the traceback, never swallowed — but the
+        # Logged in full with the traceback, never swallowed — but the
         # detail stays server-side. /healthz is unauthenticated, and a psycopg
         # or redis error string can carry the DSN, host and credentials.
         logger.exception("healthz: postgres unreachable")
@@ -121,14 +114,14 @@ def healthz(request: Request) -> dict[str, str]:
 
 @router.get("/metrics", tags=["ops"])
 def metrics() -> Response:
-    """The one Prometheus endpoint (ADR-015): golden signals + our own gauge."""
+    """The one Prometheus endpoint: golden signals plus our own gauge."""
     payload, content_type = render_metrics()
     return Response(content=payload, media_type=content_type)
 
 
 @router.post("/v1/auth/mock-token", response_model=MockTokenResponse, tags=["auth"])
 def mock_token(body: MockTokenRequest) -> MockTokenResponse:
-    """Mint a persona token. Stands in for a per-tenant OIDC provider (HLD §2)."""
+    """Mint a persona token. Stands in for a per-tenant OIDC provider."""
     return MockTokenResponse(token=mint_mock_token(body.user, body.role, body.tenant, body.scopes))
 
 
@@ -145,7 +138,7 @@ async def query(body: QueryRequest, user: CurrentUser, request: Request) -> Quer
     The deadline attached here bounds the whole pipeline and is the parent of
     the per-source budgets the federation engine enforces, so a slow connector
     degrades the response to ``partial`` instead of hanging the request
-    (brief line 84). Phase 0 set this value and nothing read it; it is read now.
+    rather than hanging the request.
     """
     settings = get_settings()
     # NOTE: request.state.user is set by get_current_user (deps.py) — identity
@@ -159,7 +152,7 @@ async def query(body: QueryRequest, user: CurrentUser, request: Request) -> Quer
         # the `empty` leg of the trichotomy, claimed falsely.
         raise RuntimeError("query pipeline is not configured on app.state")
 
-    # Timed HERE, not inside the runner, and in a `finally` (ADR-040). A
+    # Timed HERE, not inside the runner, and in a `finally`. A
     # malformed query and an entitlement denial both raise before the pipeline
     # produces an envelope, so a histogram fed from the runner would see only
     # the requests that succeeded and would report a P95 better than the one
@@ -176,7 +169,7 @@ async def query(body: QueryRequest, user: CurrentUser, request: Request) -> Quer
 def query_async() -> dict[str, str]:
     """501, deliberately — and deliberately **not** 404.
 
-    The async reroute is a documented non-goal (HLD §7), but a 429's
+    The async reroute is a documented non-goal, but a 429's
     ``suggested_action`` points callers here. A pointer to a 404 reads as a bug;
     a 501 reads as a scoped decision.
     """
@@ -194,9 +187,9 @@ async def test_fail_next(body: FailNextRequest, request: Request) -> dict[str, s
     """Make the next fetch of one connector fail. Test-only; 404 unless ``TEST_MODE``.
 
     This is what makes "a source times out, the answer degrades to partial"
-    (brief line 84) demonstrable on demand rather than only during a real
+    demonstrable on demand rather than only during a real
     outage. `make demo` uses it for its fourth call, and
-    ``tests/integration/test_timeout_partial.py`` for the DoD §2 gate.
+    ``tests/integration/test_timeout_partial.py`` for the regression gate.
 
     One-shot: the request after this one behaves normally, so a demo can show
     the recovery as well as the failure.
@@ -239,8 +232,8 @@ def test_reset(request: Request, repository: Repository) -> dict[str, str]:
     ``POST /v1/query`` WOULD see stale data from seven workers out of eight.
 
     Guarded by ``TEST_MODE``: returns 404 otherwise, so the route does not exist
-    at all in a normal run rather than existing and refusing. Phase 3's Playwright
-    ``beforeEach`` and Phase 4's k6 both need a deterministic starting state —
+    at all in a normal run rather than existing and refusing. Browser specs and
+    the k6 load profile both need a deterministic starting state —
     without the cache drop, a re-seed would keep serving the old seed for up to
     ``CONTROL_PLANE_TTL_MS``.
     """

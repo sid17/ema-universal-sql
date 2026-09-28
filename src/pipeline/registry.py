@@ -16,7 +16,7 @@ enumerating ``list_connectors()`` rather than a list of classes.
 That is what makes onboarding another GitHub *API call* one more entry under
 ``resources:`` in ``config/connectors/github.yaml`` and **no Python at all**.
 Onboarding a new *kind* of source is still one YAML file plus one adapter class
-— which is the claim this repository is graded on (brief line 29).
+— an admin onboards a connector through configuration, not code.
 
 **The catalog is rebuilt per request, not cached on the app.** Two reasons, and
 the first is practical: ``make up`` starts the app *before* ``make seed`` runs,
@@ -168,7 +168,7 @@ class ConnectorRegistry:
 
         Reachable only through ``POST /v1/test/fail-next``, which 404s unless
         ``TEST_MODE`` is on. Without a seam like this, "a source timed out →
-        partial result" (brief line 84, DoD hard part 5) could be demonstrated
+        partial result" could be demonstrated
         only by waiting for a real outage.
 
         **Unknown connector names are refused rather than stored.** A key for a

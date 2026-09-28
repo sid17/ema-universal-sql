@@ -1,8 +1,7 @@
 """The response envelope — the provenance rail every later phase fills.
 
-Transcribed verbatim from HLD §4 (= design-doc §6.2). This contract is locked:
-changing a field name or type means changing the HLD, the phase specs *and* the
-submitted design doc together.
+This contract is locked: it is the published response shape, so changing a field
+name or type is an API break, not a refactor.
 """
 
 from typing import Literal
@@ -63,7 +62,7 @@ class QueryEnvelope(BaseModel):
 
     @model_validator(mode="after")
     def _no_cursor_when_partial(self) -> "QueryEnvelope":
-        """HLD §9 rail: a partial result must not hand back a cursor.
+        """A partial result must not hand back a cursor.
 
         Paging from a partial page would silently skip the rows the failed
         source never contributed, so the omission becomes invisible.

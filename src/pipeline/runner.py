@@ -7,13 +7,12 @@ the tests and the demo.
 
 **The order is the design.** ``parse → entitle → plan`` — entitlement is injected
 *before* the pushdown split, so the RLS predicate rides pushdown to the source
-and the forbidden rows are never requested. The design doc numbers Planner as hop
-2 and Entitlement as hop 3, but its §3.2 requires RLS to *"push down with the
-query"*, which only one of those orders achieves. The hop numbers are logical
-roles, not a sequencing claim.
+and the forbidden rows are never requested. Entitlement must be injected before
+the pushdown split or the RLS predicate cannot ride pushdown to the source, so
+this order is the only one that achieves it.
 
-**Each stage is wrapped in a span as it is written**, not retrofitted in Phase 4
-(`03-BUILD-PROCESS.md`'s front-load-observability decision). The person who knows
+**Each stage is wrapped in a span as it is written**, not retrofitted. The person
+who knows
 where a stage begins and ends is the person writing it, and the same timings
 land in ``QueryEnvelope.stats`` — so the trace and the envelope cannot disagree
 about where the time went.
@@ -152,7 +151,7 @@ class QueryPipelineRunner:
         trace_id: str,
         execution_ms: int,
     ) -> None:
-        """One ``audit_logs`` row, with the literals stripped (ADR-033).
+        """One ``audit_logs`` row, with the literals stripped.
 
         Normalized from the **entitled** tree rather than the caller's text, so
         the trail records the query that actually ran — including the fact that

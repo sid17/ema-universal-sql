@@ -1,21 +1,19 @@
 """FastAPI dependencies: identity, then the tenant-status gate.
 
-Two chained steps, deliberately kept separate (the shape borrowed from
-`fastapi-permissions`, research Card 4 — its DI factory is the one thing worth
-taking from a library whose core flow we reject):
+Two chained steps, deliberately kept separate:
 
 1. **Identity** — decode the token into a :class:`UserContext`. Failure is 401.
 2. **Tenant status** — refuse a tenant that is not ``active``. Failure is 403
    ``ENTITLEMENT_DENIED``.
 
-Step 2 is the front half of crypto-shred (design-doc §3.1): revoking a tenant
-stops its queries *before any planning happens*, so no connector is called and no
-secret is resolved on behalf of an offboarded customer. The back half — actually
-destroying the per-tenant Fernet key — is Phase 1's ``test_crypto_shred``.
+Step 2 is the front half of offboarding a tenant: revoking it stops its queries
+*before any planning happens*, so no connector is called and no secret is
+resolved on behalf of a departed customer. The back half — destroying the
+per-tenant encryption key — is covered by ``test_crypto_shred``.
 
 Note this is a **coarse** gate on the tenant, not row-level entitlement. RLS and
-CLS are compiled into the query plan in Phase 2; nothing here post-filters
-anything, which is the invariant the whole design rests on.
+CLS are compiled into the query plan; nothing here post-filters anything, which
+is the invariant the whole design rests on.
 """
 
 from __future__ import annotations
@@ -33,7 +31,8 @@ from src.models.errors import ApiError, ErrorCode
 logger = logging.getLogger(__name__)
 
 #: The coarse scope every query caller needs. Deliberately a single scope:
-#: LAW 5 says do not invent a permission taxonomy before there are consumers.
+#: Deliberately one scope: inventing a permission taxonomy before there are
+#: consumers for it would be designing for a caller that does not exist.
 QUERY_EXECUTE_SCOPE = "query:execute"
 
 _extractor = AuthContextExtractor()
@@ -43,7 +42,7 @@ def get_repository(request: Request) -> ControlPlaneRepository:
     """The control-plane repository built once in the app lifespan."""
     repository = getattr(request.app.state, "repository", None)
     if repository is None:
-        # LAW 4: a missing repository is a wiring bug, not something to paper
+        # A missing repository is a wiring bug, not something to paper
         # over by skipping the tenant gate — that would fail open.
         raise RuntimeError("control-plane repository is not configured on app.state")
     return repository
@@ -96,7 +95,7 @@ def require_scope(context: UserContext, scope: str) -> UserContext:
     L0   is the token real?                    ``auth.py``          -> 401
     L1   is the tenant active?                 ``enforce_tenant_status`` -> 403
     L2   may this caller run queries at all?   **here**             -> 403
-    L3   is the connector granted?             Phase 2 gateway      -> 403
+    L3   is the connector granted?             gateway              -> 403
     L4   which rows and columns?               **compiled into the plan**
     ===  ====================================  ================================
 
@@ -104,7 +103,7 @@ def require_scope(context: UserContext, scope: str) -> UserContext:
     *an endpoint check may consult the token and the control plane, never a
     result row.* The moment a decision needs data to make, it belongs in the
     plan — putting row or column filtering here would be the post-fetch
-    filtering that `02-DEFINITION-OF-DONE.md` §4 bans outright.
+    filtering, which this design bans outright.
     """
     if not context.has_scope(scope):
         raise ApiError(

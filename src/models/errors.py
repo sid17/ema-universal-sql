@@ -1,8 +1,7 @@
 """The error vocabulary: six domain codes, one exception type.
 
-These six are the shared vocabulary between the prototype and design-doc §8.1.
-Two failures are deliberately *not* among them, and both get their own exception
-type below rather than a code:
+Six codes, and two failures deliberately *not* among them — both get their own
+exception type below rather than a code:
 
 ``UnauthenticatedError`` (401)
     A missing, expired or forged token. A transport-level failure.
@@ -10,13 +9,13 @@ type below rather than a code:
 ``InvalidQueryError`` (400)
     SQL outside the supported subset. A request-shape failure.
 
-Diluting the six with either would desync this prototype from the submitted
-design doc, which is the one thing the shared vocabulary exists to prevent.
+Diluting the six with either would make a domain code mean "your request was
+malformed", which is a different conversation with the caller.
 """
 
 from enum import StrEnum
 
-#: The async reroute a rate-limited caller should take (brief lines 110/158).
+#: The async reroute a rate-limited caller should take.
 ASYNC_REROUTE_ACTION = (
     "Rate limit exhausted for this tenant. Retry after the window resets, or "
     "reroute this query to the async path: POST /v1/query/async"
@@ -24,7 +23,7 @@ ASYNC_REROUTE_ACTION = (
 
 
 class ErrorCode(StrEnum):
-    """The six domain codes. Adding a seventh means changing the design doc."""
+    """The six domain codes. This list is the published error vocabulary."""
 
     RATE_LIMIT_EXHAUSTED = "RATE_LIMIT_EXHAUSTED"
     STALE_DATA = "STALE_DATA"
@@ -78,16 +77,14 @@ class InvalidQueryError(Exception):
     (``SELECT *``, a subquery, an aggregate, a join we do not support), or a
     column the connector schema does not declare.
 
-    **Why not one of the six** (ADR-028). The six are the vocabulary this
-    prototype shares verbatim with design-doc §8.1, and every one of them
-    describes entitlement, throttling, freshness or connector state. None
-    describes *"your query is not in the supported subset"*. The obvious
-    shortcut — reusing ``ENTITLEMENT_DENIED`` — would be actively wrong: it tells
-    a caller to go request access for what is a typo, and it makes a graded
-    security code mean two unrelated things. Adding a seventh code would mean
-    changing the submitted design doc. So this follows the precedent
+    **Why not one of the six.** Every one of them describes entitlement,
+    throttling, freshness or connector state. None describes *"your query is not
+    in the supported subset"*. The obvious shortcut — reusing
+    ``ENTITLEMENT_DENIED`` — would be actively wrong: it tells a caller to go
+    request access for what is a typo, and it makes a security code mean two
+    unrelated things. So this follows the precedent
     :class:`UnauthenticatedError` already set: a request-shape failure lives
-    outside the domain vocabulary and is documented as such.
+    outside the domain vocabulary.
 
     ``detail`` names the offending construct where one can be identified, because
     "unsupported SQL" with no pointer is the least actionable error a query API
