@@ -24,6 +24,13 @@ services:
       TEST_MODE: ${TEST_MODE:-0}
       DEFAULT_SCOPES: ${DEFAULT_SCOPES:-query:execute}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # ON here, OFF by default in src/config.py (ADR-038). The mocks answer in
+      # ~2ms, and a trace where both sources are free and DuckDB is the cost is
+      # the inverse of how a federated query really behaves — so the running
+      # stack simulates the round trip HLD line 39 says these mocks simulate.
+      # Applied on the live path only, so a cache hit is still ~0.4ms and the
+      # k6 run still measures the engine.
+      MOCK_LATENCY_SCALE: ${MOCK_LATENCY_SCALE:-1.0}
       # Must be passed through, or `OTEL_EXPORTER=none make load` in Phase 4
       # silently keeps exporting and distorts the very latency k6 measures.
       OTEL_EXPORTER: ${OTEL_EXPORTER:-file}
@@ -50,6 +57,33 @@ services:
       retries: 10
       start_period: 5s
     restart: unless-stopped
+
+  # k6 lives behind `profiles:`, so it NEVER starts with `make up` and costs
+  # nothing against the sub-60s cold-start gate — `docker compose up` ignores a
+  # profiled service entirely. It joins the compose network and reaches the app
+  # at `http://app:8000`, deliberately NOT `host.docker.internal`, which is a
+  # Docker-Desktop-ism that does not exist on plain Linux (ADR-044).
+  #
+  # Running it from its own container is what lets `make load` work on a fresh
+  # clone with no k6 installed — the sub-60s quickstart claim depends on the
+  # reviewer never having to install anything.
+  k6:
+    image: grafana/k6:latest
+    profiles: ["load"]
+    environment:
+      BASE_URL: http://app:8000
+      RATE: ${RATE:-500}
+      DURATION: ${DURATION:-60s}
+    volumes:
+      - ./load:/load:ro
+      # handleSummary writes docs/k6-summary.txt through this mount, rather than
+      # the run's stdout being redirected: stdout carries the live progress bar
+      # and ANSI escapes, which do not belong in a submission artifact.
+      - ./docs:/artifacts
+    entrypoint: ["k6", "run", "/load/query_load.js"]
+    depends_on:
+      app:
+        condition: service_healthy
 
   postgres:
     image: postgres:16

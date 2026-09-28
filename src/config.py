@@ -35,6 +35,15 @@ class Settings(BaseSettings):
     # The gateway's coarse L2 check requires `query:execute`.
     DEFAULT_SCOPES: str = "query:execute"
 
+    # How much of each mock adapter's `simulated_latency_ms` to actually sleep.
+    # DEFAULT 0.0 — OFF (ADR-038). The unit suite runs on the commit hook and
+    # must stay instant, and a sleep there would buy nothing: what the tests
+    # assert is that the delay lands on the live path and not on a cache hit,
+    # which a scale of 1.0 passed explicitly to one adapter proves just as well.
+    # docker-compose sets this to 1.0 so the running stack, the trace waterfall
+    # and `make demo` all show a source that costs what a remote source costs.
+    MOCK_LATENCY_SCALE: float = 0.0
+
     # Tracing sink. ADR-016 keeps this backend-free; "file" writes JSONL that
     # Phase 4 renders the waterfall from. "console" is for local debugging and
     # "none" is for the k6 run, where exporting is measurement overhead.

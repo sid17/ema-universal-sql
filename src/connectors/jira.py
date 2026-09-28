@@ -30,5 +30,12 @@ class JiraConnectorAdapter(MockConnectorAdapter):
     connector_type = "jira"
     resource = "issues"
 
+    #: Deliberately the slow one. Jira carries the RLS subject (``assignee``)
+    #: and the CLS-masked column (``reporter_email``), so "the entitled source
+    #: is also the expensive one" is the shape a reviewer should read off the
+    #: waterfall — and it is what makes "P95 was Jira, not the engine" a
+    #: finding rather than a caption (ADR-038).
+    simulated_latency_ms = 180.0
+
     def dataset(self) -> list[dict[str, Any]]:
         return jira_rows()

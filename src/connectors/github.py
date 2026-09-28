@@ -30,5 +30,9 @@ class GitHubConnectorAdapter(MockConnectorAdapter):
     connector_type = "github"
     resource = "pull_requests"
 
+    #: The faster of the two sources, so the waterfall has a contrast to show
+    #: rather than two equal bars (ADR-038).
+    simulated_latency_ms = 40.0
+
     def dataset(self) -> list[dict[str, Any]]:
         return github_rows()

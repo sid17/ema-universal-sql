@@ -28,10 +28,12 @@ the Phase-4 load run, which would drain ``tenant_acme``'s 5-token GitHub bucket
 on request 6 instead of serving from cache.
 """
 
+import asyncio
 import hashlib
 import json
 from typing import Any
 
+from src.config import get_settings
 from src.connectors.base import (
     AdapterResponse,
     BaseConnectorAdapter,
@@ -79,6 +81,22 @@ class MockConnectorAdapter(BaseConnectorAdapter):
     #: The resource this adapter serves, e.g. ``pull_requests``.
     resource: str
 
+    #: What a call to this source costs, in milliseconds, before
+    #: ``MOCK_LATENCY_SCALE`` is applied. Overridden per adapter.
+    #:
+    #: HLD line 39 lists "simulated pagination/latency/429" as what the mocks
+    #: provide. Pagination and the 429 were built in Phase 1; this was not, and
+    #: Phase 4 is where the omission has consequences: with both sources
+    #: answering in ~2ms the trace waterfall's honest reading is *"the
+    #: connectors are free and DuckDB is the cost"* — the inverse both of the
+    #: intended story and of how any real federated query behaves, where the
+    #: remote call dominates by two orders of magnitude (ADR-038).
+    #:
+    #: Fixed rather than jittered on purpose. Phase 1 chose deterministic
+    #: datasets so no test can flake on timing; a random sleep would reintroduce
+    #: exactly that through the back door.
+    simulated_latency_ms: float = 0.0
+
     def __init__(
         self,
         capabilities: dict[str, Any],
@@ -87,6 +105,7 @@ class MockConnectorAdapter(BaseConnectorAdapter):
         secrets: SecretsManagerClient,
         control_plane: Any,
         now_ms: NowMs = wall_clock_ms,
+        latency_scale: float | None = None,
     ) -> None:
         self._capabilities = CapabilityModel.from_dict(capabilities)
         self._cache = cache
@@ -94,6 +113,8 @@ class MockConnectorAdapter(BaseConnectorAdapter):
         self._secrets = secrets
         self._control_plane = control_plane
         self._now_ms = now_ms
+        scale = get_settings().MOCK_LATENCY_SCALE if latency_scale is None else latency_scale
+        self._latency_s = (self.simulated_latency_ms * scale) / 1000.0
         #: Set by :meth:`fail_next` to drive a failure path deterministically.
         self._forced_failure: FailureMode | None = None
 
@@ -163,6 +184,23 @@ class MockConnectorAdapter(BaseConnectorAdapter):
 
         # --- 3. resolve the tenant's credential ---------------------------
         self._secrets.resolve(self._secret_ref(request.tenant_id))
+
+        # --- 3b. the round trip a real source would cost ------------------
+        #
+        # Placed HERE, and the placement is the whole decision (ADR-038). Every
+        # return above this line is a cache hit, and a cache hit must stay
+        # ~0.4ms: it is what makes the `max_staleness_ms` demo legible, it is
+        # why the token is spent after the cache and not before (ADR-024), and
+        # it is what lets the k6 profile measure this engine rather than these
+        # sleeps. Moving it above the cache check would quietly break all three.
+        #
+        # Deliberately NOT applied to the conditional-revalidation branch. A
+        # real 304 does cost a round trip even though it transfers no body, so
+        # this mock is optimistic there by one round trip — named rather than
+        # papered over, because the branch's value is proving no token is spent,
+        # not proving what it costs.
+        if self._latency_s:
+            await asyncio.sleep(self._latency_s)
 
         # --- 4 + 5. filter and paginate -----------------------------------
         page = self._page(request)
