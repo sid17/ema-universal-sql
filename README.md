@@ -201,3 +201,11 @@ that process is legible rather than hidden:
 
 Every plan carries the decisions it took and the watch-outs it hit, so a reviewer can follow a
 feature from the decision that motivated it, through the spec, to the tasks that built it.
+
+## Repository access
+
+Private repository — access granted by invitation.
+
+```
+git clone https://github.com/sid17/ema-universal-sql.git
+```
