@@ -97,7 +97,14 @@ def test_mock_token_mints_a_usable_credential(client):
 # --------------------------------------------------------------------------
 
 
-def test_query_with_a_valid_token_returns_the_envelope_shell(client, auth_headers):
+def test_query_with_a_valid_token_returns_a_valid_envelope(client, auth_headers):
+    """The response still validates against the Phase 0 contract.
+
+    Written in Phase 0 against an empty shell, and kept — the point was never
+    the empty rows, it was that the shape is the shape. Phase 2 filled it in
+    without changing a field name or a type, which is exactly what defining the
+    contract before anything produced it was for.
+    """
     response = client.post(
         "/v1/query",
         json={"sql": CANONICAL_SQL, "max_staleness_ms": 60000},
@@ -110,20 +117,21 @@ def test_query_with_a_valid_token_returns_the_envelope_shell(client, auth_header
     # The contract must validate, not merely look similar.
     envelope = QueryEnvelope.model_validate(body)
 
-    assert envelope.rows == [], "Phase 0 returns a shell; execution lands in Phase 2"
+    assert envelope.rows, "Phase 2 executes the query; an empty result would be a regression"
     assert envelope.trace_id, "trace_id must be populated on every response"
     assert len(envelope.trace_id) == 32, "a resolvable 32-hex OTel trace id"
     assert envelope.trace_id != "0" * 32, "an all-zero id means no active span"
     assert envelope.partial is False
-    assert envelope.join_status == "n/a"
+    assert envelope.join_status == "complete"
     assert envelope.next_cursor is None
 
 
 def test_every_response_carries_a_distinct_trace_id(client, auth_headers):
     """A constant trace_id would make the Phase 4 waterfall meaningless."""
     headers = auth_headers()
-    first = client.post("/v1/query", json={"sql": "SELECT 1"}, headers=headers).json()
-    second = client.post("/v1/query", json={"sql": "SELECT 1"}, headers=headers).json()
+    body = {"sql": CANONICAL_SQL}
+    first = client.post("/v1/query", json=body, headers=headers).json()
+    second = client.post("/v1/query", json=body, headers=headers).json()
 
     assert first["trace_id"] != second["trace_id"]
 
@@ -156,20 +164,38 @@ def test_metrics_exposes_both_families(client):
     assert "http_request" in body, "the golden-signal collectors are missing"
 
 
-def test_test_reset_matches_the_configured_test_mode(client):
+def test_the_test_routes_agree_with_each_other_about_test_mode(client):
     """Assert the actual contract, not "one of two acceptable answers".
 
-    The previous version accepted 404 *or* 200 and skipped on 200 — so deleting
-    the TEST_MODE guard from the route entirely would have left it passing.
+    An earlier version read ``get_settings().TEST_MODE`` from the **host** and
+    compared it to what the **container** answered. Those are two different
+    environments, and `make test-integration` sets TEST_MODE only in the
+    container — so the test failed for a reason that had nothing to do with the
+    code under test.
+
+    The real invariant does not need the host's opinion at all: both TEST_MODE
+    routes are gated by the same check, so they must give the same answer. If
+    one route's guard were deleted they would disagree, which is the regression
+    worth catching. That the guard exists at all is asserted by the unit suite,
+    which controls the setting directly.
     """
-    from src.config import get_settings
-
-    expected = 200 if get_settings().TEST_MODE else 404
-    response = client.post("/v1/test/reset", json={})
-
-    assert response.status_code == expected, (
-        f"TEST_MODE={get_settings().TEST_MODE} should give {expected}, got {response.status_code}"
+    reset = client.post("/v1/test/reset", json={})
+    # An unknown connector name: refused with 400 when TEST_MODE is on, 404 when
+    # it is off. Either way nothing is armed, so this probe cannot leave a
+    # failure primed for whichever test runs next.
+    fail_next = client.post(
+        "/v1/test/fail-next", json={"connector": "__probe__", "mode": "timeout"}
     )
+
+    assert reset.status_code in (200, 404)
+    assert (reset.status_code == 404) == (fail_next.status_code == 404), (
+        f"the TEST_MODE routes disagree: reset={reset.status_code}, "
+        f"fail-next={fail_next.status_code}"
+    )
+    if fail_next.status_code != 404:
+        # Reachable, and it validated its input rather than storing anything.
+        assert fail_next.status_code == 400
+        assert fail_next.json()["detail"] == "UnknownConnector"
 
 
 # --------------------------------------------------------------------------
